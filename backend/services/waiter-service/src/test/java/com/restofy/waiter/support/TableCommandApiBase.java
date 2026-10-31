@@ -25,9 +25,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
- * Shared set-up and request helpers of the table closure and cleaning tests. The QR and Order services are the
- * local HTTP stubs of the DRAFT contracts ({@link FakeBackends}, {@link FakeQrCommands}); nothing here proves
- * the behaviour of the real services.
+ * Shared set-up and request helpers of the table closure and cleaning tests. The QR and Order services are local
+ * HTTP stubs ({@link FakeBackends}, {@link FakeQrCommands}): the close follows QR's K11 paths and answer shapes, the
+ * rest Waiter's DRAFT contracts. Nothing here proves the behaviour of the real services.
  */
 public abstract class TableCommandApiBase extends ApiTestBase {
 
@@ -36,9 +36,9 @@ public abstract class TableCommandApiBase extends ApiTestBase {
     protected static final UUID S3 = UUID.fromString("00000000-0000-0000-0000-0000000000a3");
     protected static final UUID WAITER_A = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
     protected static final UUID WAITER_B = UUID.fromString("00000000-0000-0000-0000-0000000000bb");
-    protected static final String CLOSE_POST = "/internal/v1/tables/[0-9a-f-]{36}/sessions/[0-9a-f-]{36}/close";
+    protected static final String CLOSE_POST = "/api/v1/internal/tables/[0-9a-f-]{36}/sessions/[0-9a-f-]{36}/close";
     protected static final String CLOSE_STATUS_GET =
-            "/internal/v1/tables/[0-9a-f-]{36}/sessions/[0-9a-f-]{36}/close-commands/[0-9a-f-]{36}";
+            "/api/v1/internal/tables/[0-9a-f-]{36}/sessions/[0-9a-f-]{36}/close-commands/[0-9a-f-]{36}";
     protected static final String CLEAN_POST = "/internal/v1/tables/[0-9a-f-]{36}/cleaned";
     protected static final String CLEAN_STATUS_GET = "/internal/v1/tables/[0-9a-f-]{36}/clean-commands/[0-9a-f-]{36}";
 
@@ -90,10 +90,6 @@ public abstract class TableCommandApiBase extends ApiTestBase {
 
     protected ResultActions cleanTable(long version) throws Exception {
         return clean(asWaiter(WAITER_A), table.id(), newKey(), versionBody(version));
-    }
-
-    protected ResultActions eligibility(RequestPostProcessor staff, UUID tableId) throws Exception {
-        return mockMvc.perform(get("/api/v1/waiters/tables/" + tableId + "/closure-eligibility").with(staff));
     }
 
     protected ResultActions commandStatus(UUID tableId, UUID commandId) throws Exception {

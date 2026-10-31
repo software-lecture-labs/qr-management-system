@@ -14,6 +14,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.env.StandardEnvironment;
@@ -68,7 +69,7 @@ class RestClientConfigurationTests {
 
     private ApplicationContextRunner runner(Map<String, Object> env) {
         return new ApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(RestClientAutoConfiguration.class))
+                .withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class, RestClientAutoConfiguration.class))
                 .withUserConfiguration(RestClientConfiguration.class, QrClient.class, OrderClient.class,
                         NotificationClient.class)
                 .withInitializer(context -> {

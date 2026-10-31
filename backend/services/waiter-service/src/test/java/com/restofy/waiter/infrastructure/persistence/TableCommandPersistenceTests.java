@@ -23,14 +23,15 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Real PostgreSQL (Testcontainers): Flyway applies V101-V105, Hibernate validates the new entity against it, and
+ * Real PostgreSQL (Testcontainers): Flyway applies V101-V106, Hibernate validates the new entity against it, and
  * the database itself enforces the rules of the table command record: one unanswered close per main session, one
- * unanswered cleaning per table, one completed close per session, the shape of every status and the tenant-safe
- * link from a cancelled call to the command that ended it.
+ * unanswered cleaning per table, one completed close per session, the shape of every status, the reconciliation
+ * warning on completed closes only and the tenant-safe link from a cancelled call to the command that ended it.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -116,10 +117,28 @@ class TableCommandPersistenceTests {
                 "Another restaurant's command id looks like a missing one");
         assertTrue(repository.findByIdAndRestaurantIdAndTableId(origin.id(), RESTAURANT, UUID.randomUUID()).isEmpty());
 
-        loaded.completeClose(Instant.now().truncatedTo(ChronoUnit.MICROS), 2, 1, Instant.now().truncatedTo(ChronoUnit.MICROS));
+        assertFalse(loaded.isReconciliationRequired());
+        loaded.completeClose(Instant.now().truncatedTo(ChronoUnit.MICROS), 2, 1, true, Instant.now().truncatedTo(ChronoUnit.MICROS));
         TableCommand completed = repository.saveAndFlush(loaded);
         assertEquals(1L, completed.getVersion());
-        assertEquals(TableCommandStatus.COMPLETED, repository.findById(origin.id()).orElseThrow().getStatus());
+        TableCommand reread = repository.findById(origin.id()).orElseThrow();
+        assertEquals(TableCommandStatus.COMPLETED, reread.getStatus());
+        assertTrue(reread.isReconciliationRequired(), "QR's K13 warning survives with the completed close");
+    }
+
+    @Test
+    void onlyACompletedCloseCanCarryTheReconciliationWarning() {
+        UUID completed = close("COMPLETED", "key-completed-1");
+        jdbc.update("UPDATE table_commands SET reconciliation_required = true WHERE id = ?", completed);
+        for (String status : List.of("PENDING", "IN_PROGRESS", "UNKNOWN", "REJECTED")) {
+            UUID open = insertCommand(RESTAURANT, "CLOSE", UUID.randomUUID(), status, "key-" + UUID.randomUUID());
+            assertThrows(DataIntegrityViolationException.class,
+                    () -> jdbc.update("UPDATE table_commands SET reconciliation_required = true WHERE id = ?", open),
+                    "A " + status + " close is no confirmed closure");
+        }
+        UUID cleaning = insertCommand(RESTAURANT, "CLEAN", null, "PENDING", "key-clean-00001");
+        assertThrows(DataIntegrityViolationException.class,
+                () -> jdbc.update("UPDATE table_commands SET reconciliation_required = true WHERE id = ?", cleaning));
     }
 
     @Test

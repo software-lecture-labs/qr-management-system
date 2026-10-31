@@ -2,10 +2,8 @@ package com.restofy.waiter.api.controller;
 
 import com.restofy.waiter.api.dto.request.CleanTableRequest;
 import com.restofy.waiter.api.dto.request.CloseTableRequest;
-import com.restofy.waiter.api.dto.response.ClosureEligibilityResponse;
 import com.restofy.waiter.api.dto.response.TableCommandResponse;
 import com.restofy.waiter.application.mapper.WaiterMapper;
-import com.restofy.waiter.application.service.ClosureEligibilityService;
 import com.restofy.waiter.application.service.TableCommandService;
 import com.restofy.waiter.domain.enums.TableCommandStatus;
 import com.restofy.waiter.infrastructure.security.AuthenticatedStaff;
@@ -25,28 +23,19 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 /**
- * Table closure and cleaning of the waiter panel. Protected: WAITER role of the caller's restaurant. The
- * eligibility read is informative; the two commands are forwarded to QR, which alone decides and records them.
- * The restaurant and the acting staff member always come from the verified identity, never from the request.
+ * Table closure and cleaning of the waiter panel. Protected: WAITER role of the caller's restaurant. Both
+ * commands are forwarded to QR, which alone decides and records them; whether a session may close is assessed by
+ * Order for QR (ADR-QR-001 K7), never by Waiter. The restaurant and the acting staff member always come from the
+ * verified identity, never from the request.
  */
 @RestController
 @RequestMapping("/api/v1/waiters/tables")
 public class WaiterTableCommandController {
 
-    private final ClosureEligibilityService eligibility;
     private final TableCommandService commands;
 
-    public WaiterTableCommandController(ClosureEligibilityService eligibility, TableCommandService commands) {
-        this.eligibility = eligibility;
+    public WaiterTableCommandController(TableCommandService commands) {
         this.commands = commands;
-    }
-
-    /** Informative: whether the live session could be closed according to what QR and Order report right now. */
-    @GetMapping("/{tableId}/closure-eligibility")
-    public ClosureEligibilityResponse closureEligibility(@AuthenticationPrincipal AuthenticatedStaff staff,
-                                                         @PathVariable UUID tableId, HttpServletRequest request) {
-        QueryParameters.allow(request);
-        return eligibility.assess(staff, tableId);
     }
 
     /**

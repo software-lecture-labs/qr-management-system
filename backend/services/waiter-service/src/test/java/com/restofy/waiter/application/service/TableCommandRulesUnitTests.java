@@ -69,10 +69,11 @@ class TableCommandRulesUnitTests {
     @Test
     void anAnswerOfQrIsFinalAndCannotBeRevised() {
         TableCommand completed = TableCommand.close(origin(), SESSION, null);
-        completed.completeClose(NOW, 2, 3, NOW);
+        completed.completeClose(NOW, 2, 3, true, NOW);
         assertEquals(TableCommandStatus.COMPLETED, completed.getStatus());
         assertEquals(2, completed.getEndedGuestSessions());
         assertEquals(3, completed.getCancelledCallCount());
+        assertTrue(completed.isReconciliationRequired(), "QR's K13 warning is kept with the definite closure");
         assertFalse(completed.isOpen());
         assertThrows(IllegalStateException.class, () -> completed.reject("SESSION_NOT_OPEN", null, NOW));
         assertThrows(IllegalStateException.class, () -> completed.markUnknown(NOW));
@@ -80,7 +81,8 @@ class TableCommandRulesUnitTests {
         TableCommand rejected = TableCommand.close(origin(), SESSION, null);
         rejected.reject("CLOSURE_BLOCKED", "UNPAID_BALANCE", NOW);
         assertEquals("UNPAID_BALANCE", rejected.getRejectionDetail());
-        assertThrows(IllegalStateException.class, () -> rejected.completeClose(NOW, 1, 0, NOW));
+        assertThrows(IllegalStateException.class, () -> rejected.completeClose(NOW, 1, 0, false, NOW));
+        assertFalse(rejected.isReconciliationRequired());
     }
 
     @Test
@@ -93,8 +95,9 @@ class TableCommandRulesUnitTests {
         assertTrue(command.isOpen(), "CLOSING is not a success");
         command.markInFlight(NOW);
         assertEquals(TableCommandStatus.PENDING, command.getStatus());
-        command.completeClose(NOW, 0, 0, NOW);
+        command.completeClose(NOW, 0, 0, false, NOW);
         assertEquals(TableCommandStatus.COMPLETED, command.getStatus());
+        assertFalse(command.isReconciliationRequired());
     }
 
     @Test
@@ -163,6 +166,26 @@ class TableCommandRulesUnitTests {
         // A different, newer session of the same table is fine: the old one is simply closed.
         new QrCloseResultDto(UUID.randomUUID(), QrCloseResultDto.State.CLOSED, TABLE, SESSION, NOW,
                 new QrCloseResultDto.GuestSessions(1, 1), table(TableOperationalStatus.OCCUPIED, UUID.randomUUID()), null, List.of());
+    }
+
+    @Test
+    void aClosedAnswerMayOnlyCarryTheReconciliationWarningAndStaysClosed() {
+        var guests = new QrCloseResultDto.GuestSessions(2, 2);
+        var cleaning = table(TableOperationalStatus.CLEANING, null);
+        QrCloseResultDto drift = new QrCloseResultDto(UUID.randomUUID(), QrCloseResultDto.State.CLOSED, TABLE, SESSION,
+                NOW, guests, cleaning, null, List.of(QrCloseResultDto.RECONCILIATION_REQUIRED));
+        assertEquals(QrCloseResultDto.State.CLOSED, drift.state());
+        assertTrue(drift.reconciliationRequired());
+        assertFalse(new QrCloseResultDto(UUID.randomUUID(), QrCloseResultDto.State.CLOSED, TABLE, SESSION, NOW, guests,
+                cleaning, null, List.of()).reconciliationRequired());
+        // A closed answer naming a closure blocker or a rejection contradicts itself.
+        assertThrows(IllegalArgumentException.class, () -> new QrCloseResultDto(UUID.randomUUID(),
+                QrCloseResultDto.State.CLOSED, TABLE, SESSION, NOW, guests, cleaning, null, List.of("UNPAID_BALANCE")));
+        assertThrows(IllegalArgumentException.class, () -> new QrCloseResultDto(UUID.randomUUID(),
+                QrCloseResultDto.State.CLOSED, TABLE, SESSION, NOW, guests, cleaning, "CLOSURE_BLOCKED", List.of()));
+        // The warning belongs to a closure only; a refusal never becomes a reconciliation case.
+        assertFalse(new QrCloseResultDto(UUID.randomUUID(), QrCloseResultDto.State.REJECTED, TABLE, SESSION, null, null,
+                null, "CLOSURE_BLOCKED", List.of(QrCloseResultDto.RECONCILIATION_REQUIRED)).reconciliationRequired());
     }
 
     @Test

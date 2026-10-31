@@ -20,8 +20,12 @@ public record TableCommandResponse(UUID commandId, TableCommandType type, UUID t
                                    List<String> blockers, Instant requestedAt, Instant completedAt,
                                    String reconciliation, Closure closure, Cleaning cleaning) {
 
-    /** QR closed the main session at {@code closedAt}; all its guest sessions ended; the unresolved calls ended with it. */
-    public record Closure(Instant closedAt, int endedGuestSessions, int cancelledCalls) {
+    /**
+     * QR closed the main session at {@code closedAt}; all its guest sessions ended; the unresolved calls ended with it.
+     * {@code reconciliationRequired} repeats QR's warning that Order found a scope drift after the closure: the
+     * closure stands, the drift is reconciled by QR and Order, and nothing has to be closed or paid again.
+     */
+    public record Closure(Instant closedAt, int endedGuestSessions, int cancelledCalls, boolean reconciliationRequired) {
     }
 
     /** QR made the table available to the next customer; {@code tableVersion} is the table's version afterwards. */

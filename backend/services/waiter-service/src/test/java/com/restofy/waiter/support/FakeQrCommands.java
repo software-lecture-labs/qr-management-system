@@ -16,10 +16,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The table commands of QR, as the DRAFT contract demands them: close a main session and mark a table cleaned.
- * It decides atomically (the whole handler is one critical section, as QR's transaction must be) and is
- * idempotent by command id. It models the behaviour the contract demands from QR; a passing test proves the
- * Waiter side against this stub and says nothing about the real QR service, which does not implement it yet.
+ * The table commands of QR: close a main session on QR's K11 internal paths ({@code /api/v1/internal}, QR commit
+ * 1f98fbb) and mark a table cleaned on Waiter's DRAFT path, which QR does not offer. It decides atomically (the
+ * whole handler is one critical section, as QR's transaction must be) and is idempotent by command id. It models
+ * the answers the contract describes; a passing test proves the Waiter side against this stub and says nothing
+ * about the real QR service, whose Waiter endpoints stay closed until service identity and staff delegation exist.
  *
  * <p>What QR would verify with Order and Payment at closing time is not simulated: a test says what QR refuses
  * with ({@link #refuseCloseWith}), so the stub never duplicates the rules that belong to the owners.
@@ -52,9 +53,9 @@ public final class FakeQrCommands {
     }
 
     private static final String ID = "([0-9a-f-]{36})";
-    private static final Pattern CLOSE_PATH = Pattern.compile("/internal/v1/tables/" + ID + "/sessions/" + ID + "/close");
+    private static final Pattern CLOSE_PATH = Pattern.compile("/api/v1/internal/tables/" + ID + "/sessions/" + ID + "/close");
     private static final Pattern CLOSE_STATUS_PATH =
-            Pattern.compile("/internal/v1/tables/" + ID + "/sessions/" + ID + "/close-commands/" + ID);
+            Pattern.compile("/api/v1/internal/tables/" + ID + "/sessions/" + ID + "/close-commands/" + ID);
     private static final Pattern CLEAN_PATH = Pattern.compile("/internal/v1/tables/" + ID + "/cleaned");
     private static final Pattern CLEAN_STATUS_PATH = Pattern.compile("/internal/v1/tables/" + ID + "/clean-commands/" + ID);
     private static final Instant CLOSED_AT = Instant.parse("2026-10-16T11:00:00Z");
@@ -69,6 +70,8 @@ public final class FakeQrCommands {
     public volatile int guestSessions = 2;
     /** When not negative, QR claims CLOSED while only this many guest sessions ended: a contradictory answer. */
     public volatile int endedGuestsReported = -1;
+    /** K13: Order found a scope drift after QR closed locally; QR still says CLOSED and names RECONCILIATION_REQUIRED. */
+    public volatile boolean scopeDrift = false;
 
     public FakeQrCommands(FakeBackends backends) {
         this.backends = backends;
@@ -100,8 +103,12 @@ public final class FakeQrCommands {
         CloseRecord record = closes.get(commandId);
         FakeBackends.Table table = backends.table(record.tableId());
         backends.replace(table.with("CLEANING", null));
-        closes.put(commandId, new CloseRecord(record.digest(), "CLOSED", null, List.of(), record.guests(), record.guests(),
+        closes.put(commandId, new CloseRecord(record.digest(), "CLOSED", null, closedBlockers(), record.guests(), record.guests(),
                 record.tableId(), record.sessionId()));
+    }
+
+    private List<String> closedBlockers() {
+        return scopeDrift ? List.of("RECONCILIATION_REQUIRED") : List.of();
     }
 
     /** QR closes the session on its own (for example because it expired), outside any Waiter command. */
@@ -152,7 +159,7 @@ public final class FakeQrCommands {
         }
         backends.replace(table.with("CLEANING", null));
         int ended = endedGuestsReported >= 0 ? endedGuestsReported : guestSessions;
-        closes.put(commandId, new CloseRecord(digest, "CLOSED", null, List.of(), guestSessions, ended, tableId, sessionId));
+        closes.put(commandId, new CloseRecord(digest, "CLOSED", null, closedBlockers(), guestSessions, ended, tableId, sessionId));
         Response answer = fault == Fault.GARBAGE_ANSWER ? Response.json(200, "not json")
                 : Response.json(200, FakeBackends.write(answer(commandId, closes.get(commandId))));
         return fault == Fault.LOST_ANSWER ? answer.delayed(1500) : answer;

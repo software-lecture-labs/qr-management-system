@@ -55,12 +55,17 @@ public final class WaiterMapper {
                 openCallCount(unresolved), billRequested(unresolved), table.version(), ready, pendingCommand);
     }
 
+    /** The newest command of a table that has no final answer of QR yet, as the panel shows it. */
+    public static PendingCommandResponse pendingCommand(TableCommand command) {
+        return new PendingCommandResponse(command.getId(), command.getType(), command.getStatus(), command.getCreatedAt());
+    }
+
     public static TableCommandResponse toTableCommand(TableCommandService.Result result) {
         TableCommand command = result.command();
         boolean completed = command.getStatus() == TableCommandStatus.COMPLETED;
         TableCommandResponse.Closure closure = completed && command.getType() == TableCommandType.CLOSE
                 ? new TableCommandResponse.Closure(command.getQrClosedAt(), command.getEndedGuestSessions(),
-                command.getCancelledCallCount()) : null;
+                command.getCancelledCallCount(), command.isReconciliationRequired()) : null;
         TableCommandResponse.Cleaning cleaning = completed && command.getType() == TableCommandType.CLEAN
                 ? new TableCommandResponse.Cleaning(command.getTableVersionAfter(), Boolean.TRUE.equals(command.getReadyForNewCustomer()))
                 : null;

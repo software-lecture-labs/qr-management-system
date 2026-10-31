@@ -82,6 +82,13 @@ public class TableCommand {
     @Column(name = "cancelled_call_count")
     private Integer cancelledCallCount;
 
+    /**
+     * QR confirmed the close but named {@code RECONCILIATION_REQUIRED}: Order found a scope drift after the local
+     * closure. The closure stands; this is an operational warning QR and Order reconcile, never a reason to reopen.
+     */
+    @Column(name = "reconciliation_required", nullable = false)
+    private boolean reconciliationRequired;
+
     @Column(name = "table_version_after")
     private Long tableVersionAfter;
 
@@ -165,12 +172,13 @@ public class TableCommand {
     }
 
     /** QR confirmed that the main session and all its guest sessions ended; the calls of the session ended with it. */
-    public void completeClose(Instant closedAt, int endedGuests, int cancelledCalls, Instant now) {
+    public void completeClose(Instant closedAt, int endedGuests, int cancelledCalls, boolean reconciliation, Instant now) {
         requireOpen();
         status = TableCommandStatus.COMPLETED;
         qrClosedAt = closedAt;
         endedGuestSessions = endedGuests;
         cancelledCallCount = cancelledCalls;
+        reconciliationRequired = reconciliation;
         updatedAt = now;
         completedAt = now;
     }

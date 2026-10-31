@@ -112,7 +112,7 @@ public class TableQueryService {
         Map<UUID, PendingCommandResponse> pending = new HashMap<>();
         for (TableCommand command : tableCommands.findByRestaurantIdAndStatusInOrderByCreatedAtDesc(restaurantId,
                 TableCommandStatus.OPEN)) {
-            pending.putIfAbsent(command.getTableId(), ClosureEligibilityService.pending(command));
+            pending.putIfAbsent(command.getTableId(), WaiterMapper.pendingCommand(command));
         }
         return new Facts(activeOrders, calls, pending);
     }

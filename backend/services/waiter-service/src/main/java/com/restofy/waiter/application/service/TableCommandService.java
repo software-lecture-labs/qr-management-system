@@ -6,6 +6,7 @@ import com.restofy.waiter.domain.enums.TableCommandType;
 import com.restofy.waiter.domain.exception.CallConflictException;
 import com.restofy.waiter.domain.exception.DependencyException;
 import com.restofy.waiter.domain.exception.DependencyFailure;
+import com.restofy.waiter.domain.exception.InvalidRequestException;
 import com.restofy.waiter.domain.exception.ResourceNotFoundException;
 import com.restofy.waiter.domain.exception.TableCommandRejectedException;
 import com.restofy.waiter.domain.exception.TableCommandUnknownException;
@@ -66,26 +67,29 @@ public class TableCommandService {
     public record Result(TableCommand command, String reconciliation) {
     }
 
-    /** QR's answer reduced to what the command bookkeeping needs, whichever kind of command it concerns. */
-    private record Verdict(Kind kind, Instant closedAt, int endedGuests, long tableVersion, boolean tableReady,
-                           String code, List<String> blockers) {
+    /**
+     * QR's answer reduced to what the command bookkeeping needs, whichever kind of command it concerns.
+     * {@code reconciliation} is QR's K13 warning on a definite closure; it never changes the kind of the answer.
+     */
+    private record Verdict(Kind kind, Instant closedAt, int endedGuests, boolean reconciliation, long tableVersion,
+                           boolean tableReady, String code, List<String> blockers) {
 
         enum Kind { DONE, IN_PROGRESS, REFUSED }
 
         static Verdict closing() {
-            return new Verdict(Kind.IN_PROGRESS, null, 0, 0, false, null, List.of());
+            return new Verdict(Kind.IN_PROGRESS, null, 0, false, 0, false, null, List.of());
         }
 
-        static Verdict closed(Instant closedAt, int endedGuests) {
-            return new Verdict(Kind.DONE, closedAt, endedGuests, 0, false, null, List.of());
+        static Verdict closed(Instant closedAt, int endedGuests, boolean reconciliation) {
+            return new Verdict(Kind.DONE, closedAt, endedGuests, reconciliation, 0, false, null, List.of());
         }
 
         static Verdict cleaned(long tableVersion, boolean ready) {
-            return new Verdict(Kind.DONE, null, 0, tableVersion, ready, null, List.of());
+            return new Verdict(Kind.DONE, null, 0, false, tableVersion, ready, null, List.of());
         }
 
         static Verdict refused(String code, List<String> blockers) {
-            return new Verdict(Kind.REFUSED, null, 0, 0, false, code, blockers);
+            return new Verdict(Kind.REFUSED, null, 0, false, 0, false, code, blockers);
         }
     }
 
@@ -119,6 +123,10 @@ public class TableCommandService {
         UUID restaurantId = AuthenticatedStaff.requireWaiterRestaurant(staff);
         String key = IdempotencyKeys.require(idempotencyKey);
         String reason = CallMessage.normalize(rawReason, "reason");
+        // QR limits the reason in UTF-16 units, not code points; a longer text would only be refused by QR.
+        if (reason != null && reason.length() > CallMessage.MAX_LENGTH) {
+            throw new InvalidRequestException("reason must be at most " + CallMessage.MAX_LENGTH + " characters");
+        }
         String digest = IdempotencyKeys.digest("CLOSE", tableId, tableSessionId, expectedSessionVersion, reason);
         TableCommand.Origin origin = new TableCommand.Origin(UUID.randomUUID(), restaurantId, tableId,
                 expectedSessionVersion, staff.staffUserId(), key, digest, now());
@@ -216,7 +224,7 @@ public class TableCommandService {
                     "Another " + fresh.getType().name().toLowerCase(Locale.ROOT)
                             + " command for this target has no final answer yet; query it instead of sending another");
         }
-        return send(command);
+        return send(command, true);
     }
 
     /**
@@ -255,13 +263,18 @@ public class TableCommandService {
         } catch (DependencyException failure) {
             return unknown(command, failure.failure());
         }
-        if (recorded.isEmpty()) return send(command);
+        if (recorded.isEmpty()) return send(command, false);
         Result settled = apply(command, recorded.get());
         if (settled.command().getStatus() == TableCommandStatus.REJECTED) throw rejection(settled.command());
         return settled;
     }
 
-    private Result send(TableCommand command) {
+    /**
+     * Sends the command once. QR refusing Waiter itself (401/403) proves only that this request was not processed;
+     * it is final only for the first attempt. After an earlier attempt whose outcome is unknown, that attempt may
+     * still have been applied, so the command stays unknown.
+     */
+    private Result send(TableCommand command, boolean firstAttempt) {
         Verdict verdict;
         try {
             verdict = dispatch(command);
@@ -270,7 +283,7 @@ public class TableCommandService {
             commands.saveAndFlush(command);
             throw rejection(command);
         } catch (DependencyException failure) {
-            if (failure.failure() == DependencyFailure.REJECTED) {
+            if (failure.failure() == DependencyFailure.REJECTED && firstAttempt) {
                 command.reject(DEPENDENCY_REJECTED, null, now());
                 commands.saveAndFlush(command);
                 throw rejection(command);
@@ -310,7 +323,7 @@ public class TableCommandService {
                     Instant now = now();
                     if (current.getType() == TableCommandType.CLOSE) {
                         int ended = callCloser.closeCallsOf(current, now);
-                        current.completeClose(verdict.closedAt(), verdict.endedGuests(), ended, now);
+                        current.completeClose(verdict.closedAt(), verdict.endedGuests(), ended, verdict.reconciliation(), now);
                     } else {
                         current.completeClean(verdict.tableVersion(), verdict.tableReady(), now);
                     }
@@ -344,7 +357,7 @@ public class TableCommandService {
 
     private static Verdict verdict(QrCloseResultDto answer) {
         return switch (answer.state()) {
-            case CLOSED -> Verdict.closed(answer.closedAt(), answer.guestSessions().ended());
+            case CLOSED -> Verdict.closed(answer.closedAt(), answer.guestSessions().ended(), answer.reconciliationRequired());
             case CLOSING -> Verdict.closing();
             case REJECTED -> Verdict.refused(QrClient.knownCloseRejection(answer.rejectionCode()),
                     QrClient.knownBlockers(answer.blockers()));

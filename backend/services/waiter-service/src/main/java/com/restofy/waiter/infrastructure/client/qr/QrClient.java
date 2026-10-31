@@ -10,10 +10,12 @@ import com.restofy.waiter.infrastructure.config.ServiceUrlProperties;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -26,10 +28,20 @@ import java.util.UUID;
 
 /**
  * Adapter for the QR service, the owner of tables and table sessions. Everything it reads is checked
- * against the caller's restaurant, so data of another tenant is never passed on.
- * The contract is a DRAFT; QR has not implemented it yet. Besides the
- * reads it carries the two table commands, closing a main session and marking a table cleaned: QR alone
- * decides them, and nothing here sends a command again on its own.
+ * against the caller's restaurant, so data of another tenant is never passed on. It calls QR directly, never
+ * through the Gateway. Besides the reads it carries the two table commands, closing a main session and marking a
+ * table cleaned: QR alone decides them, and nothing here sends a command again on its own.
+ *
+ * <p>Only the close command and its status follow a contract QR has implemented: ADR-QR-001 K11 under
+ * {@code /api/v1/internal} (reviewed at QR commit 1f98fbb). QR keeps those endpoints closed until the Waiter service
+ * identity and the staff delegation are verified; Waiter sends neither yet, so QR answers 401 today. The table
+ * reads, the guest verification and the cleaning command still use Waiter's DRAFT {@code /internal/v1} paths: QR
+ * has no internal counterpart for them, and moving them onto QR's staff endpoints would change their identity and
+ * idempotency semantics, so they wait for a shared contract.
+ *
+ * <p>QR's answers are read with unknown fields ignored, so an additive field of QR does not turn into an unknown
+ * outcome; identifiers, enum values, states and the cross-checks below are still enforced. Incoming requests of
+ * Waiter keep rejecting unknown fields.
  */
 @Component
 public class QrClient {
@@ -41,8 +53,12 @@ public class QrClient {
 
     private final RestClient client;
 
-    public QrClient(RestClient.Builder builder, ServiceUrlProperties urls) {
-        this.client = builder.clone().baseUrl(urls.qrUrl().toString()).build();
+    public QrClient(RestClient.Builder builder, ServiceUrlProperties urls, JsonMapper json) {
+        JsonMapper answers = json.rebuild().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
+        this.client = builder.clone().baseUrl(urls.qrUrl().toString())
+                .configureMessageConverters(converters -> converters.withJsonConverter(
+                        new JacksonJsonHttpMessageConverter(answers)))
+                .build();
     }
 
     /** Every table of the restaurant, read page by page with a fixed upper bound of requests. */
@@ -106,7 +122,7 @@ public class QrClient {
                 .retrieve().body(QrGuestContextDto.class));
     }
 
-    // ----- table commands (WAITER-04, DRAFT) -----
+    // ----- table commands (close: QR K11; cleaning: DRAFT) -----
 
     /** Refusals QR may give to a close; anything else becomes {@link QrRejectedException#GENERIC}. */
     static final Set<String> KNOWN_CLOSE_REJECTIONS = Set.of("SESSION_NOT_FOUND", "SESSION_TABLE_MISMATCH",
@@ -117,21 +133,23 @@ public class QrClient {
     private static final JsonMapper REJECTION_JSON = JsonMapper.builder().build();
 
     /**
-     * Sends the close command. QR alone decides, atomically, whether the session may be closed: it stops new
-     * order acceptance, settles the orders in flight, verifies delivery, balance and payment certainty with
-     * their owners, and ends the main session and every guest session. Three kinds of outcome:
+     * Sends the close command. QR alone decides whether the session may be closed: it orders the close with
+     * Order's checkout, lets Order verify every order and the payment facts, and ends the main session and every
+     * guest session in one local transaction. Three kinds of outcome:
      * <ul>
-     *   <li>an answer: {@code 200 CLOSED} (all sessions ended) or {@code 202 CLOSING} (accepted, not finished);</li>
-     *   <li>{@link QrRejectedException}: QR definitively did not close the session;</li>
+     *   <li>an answer: {@code 200 CLOSED} (all sessions ended, possibly with the K13 reconciliation warning) or
+     *       {@code 202 CLOSING} (accepted, not finished);</li>
+     *   <li>{@link QrRejectedException}: QR definitively did not close the session ({@code 409 CLOSURE_BLOCKED},
+     *       a stale version, another session ...);</li>
      *   <li>{@link DependencyException}: no usable answer. The close may or may not have happened and nothing
      *       here sends it again: resending is a decision of the caller, with the same command id.</li>
      * </ul>
-     * A 401/403 is reported as a dependency rejection ({@code REJECTED}): QR did not process the request.
+     * A 401/403 is reported as a dependency rejection ({@code REJECTED}): QR did not process this request.
      */
     public QrCloseResultDto closeSession(QrCloseRequestDto command) {
         try {
             ResponseEntity<QrCloseResultDto> answer = client.post()
-                    .uri("/internal/v1/tables/{tableId}/sessions/{tableSessionId}/close", command.tableId(),
+                    .uri("/api/v1/internal/tables/{tableId}/sessions/{tableSessionId}/close", command.tableId(),
                             command.tableSessionId())
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("Idempotency-Key", command.commandId().toString())
@@ -160,10 +178,14 @@ public class QrClient {
         }
     }
 
-    /** What QR recorded for a close command id; empty if QR has no record (not received, or still being written). */
+    /**
+     * What QR recorded for a close command id; empty if QR has no record (not received, still being written, or not
+     * this table and session). QR's status read never runs the command again. Its {@code table} is the current
+     * table, which may already be cleaned or serve the next visit; that says nothing against the old closure.
+     */
     public Optional<QrCloseResultDto> closeStatus(UUID restaurantId, UUID tableId, UUID tableSessionId, UUID commandId) {
         Optional<QrCloseResultDto> status = DownstreamCalls.executeOptional(DEPENDENCY, () -> client.get()
-                .uri(uri -> uri.path("/internal/v1/tables/{tableId}/sessions/{tableSessionId}/close-commands/{commandId}")
+                .uri(uri -> uri.path("/api/v1/internal/tables/{tableId}/sessions/{tableSessionId}/close-commands/{commandId}")
                         .queryParam("restaurantId", restaurantId).build(tableId, tableSessionId, commandId))
                 .retrieve().body(QrCloseResultDto.class));
         status.ifPresent(found -> {

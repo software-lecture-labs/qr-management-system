@@ -54,16 +54,6 @@ class TableClosureApiTests extends TableCommandApiBase {
         UUID otherRestaurant = insertServiceRequest(OTHER_RESTAURANT, UUID.randomUUID(), S1, UUID.randomUUID(), "BILL", "OPEN",
                 Instant.now());
 
-        eligibility(asWaiter(WAITER_A), table.id()).andExpect(status().isOk())
-                .andExpect(jsonPath("$.informationalOnly").value(true))
-                .andExpect(jsonPath("$.closableInWaiterView").value(true))
-                .andExpect(jsonPath("$.blockers", empty()))
-                .andExpect(jsonPath("$.tableSessionId").value(S1.toString()))
-                .andExpect(jsonPath("$.sessionVersion").value(3))
-                .andExpect(jsonPath("$.orderCount").value(1))
-                .andExpect(jsonPath("$.openCallCount").value(2))
-                .andExpect(jsonPath("$.notAssessed", contains("ORDER_ADMISSIONS_IN_FLIGHT", "PAYMENT_PROVIDER_REALTIME_STATE")));
-
         String key = newKey();
         close(asWaiter(WAITER_A), table.id(), S1, key, versionBody(3)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.type").value("CLOSE"))
@@ -188,10 +178,7 @@ class TableClosureApiTests extends TableCommandApiBase {
 
     @Test
     void aManualCloseOfACancelledOrderCarriesItsReasonAndTheAuditData() throws Exception {
-        FakeBackends.Order cancelled = addOrder(table, S1, "ORD-9", "CANCELLED", "PENDING", null, "2026-10-16T09:00:00Z");
-        backends.settlements.put(cancelled.id(), FakeBackends.Settlement.owing("0"));
-        eligibility(asWaiter(WAITER_A), table.id()).andExpect(jsonPath("$.closableInWaiterView").value(true));
-
+        addOrder(table, S1, "ORD-9", "CANCELLED", "PENDING", null, "2026-10-16T09:00:00Z");
         String key = newKey();
         close(asWaiter(WAITER_B), table.id(), S1, key, "{\"expectedVersion\":3,\"reason\":\"  Müşteri ayrıldı, sipariş iptal edildi \"}")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("COMPLETED"));
@@ -207,20 +194,21 @@ class TableClosureApiTests extends TableCommandApiBase {
         assertNotNull(row.get("completed_at"));
     }
 
-    // ----- the eligibility matrix, as the API shows it -----
+    // ----- QR decides; Waiter assesses nothing (ADR-QR-001 K7) -----
 
     @Test
-    void anUnpaidBalanceIsABlockerAndQrsRefusalClosesNothing() throws Exception {
-        FakeBackends.Order unpaid = addOrder(table, S1, "ORD-2", "ACCEPTED", "SERVED", "READY", "2026-10-16T09:00:00Z");
+    void waiterOffersNoClosureVerdictOfItsOwn() throws Exception {
+        mockMvc.perform(get("/api/v1/waiters/tables/" + table.id() + "/closure-eligibility").with(asWaiter(WAITER_A)))
+                .andExpect(status().isNotFound());
+        assertEquals(0, STUB.requests("POST", "/internal/v1/orders/search").size(), "No order is read to judge a closure");
+    }
+
+    @Test
+    void qrsRefusalClosesNothingAndIsFinal() throws Exception {
+        addOrder(table, S1, "ORD-2", "ACCEPTED", "SERVED", "READY", "2026-10-16T09:00:00Z");
         UUID bill = call(S1, "BILL", "OPEN");
 
-        eligibility(asWaiter(WAITER_A), table.id()).andExpect(status().isOk())
-                .andExpect(jsonPath("$.closableInWaiterView").value(false))
-                .andExpect(jsonPath("$.blockers[0].code").value("UNPAID_BALANCE"))
-                .andExpect(jsonPath("$.blockers[0].orderId").value(unpaid.id().toString()))
-                .andExpect(jsonPath("$.blockers[0].orderNumber").value("ORD-2"));
-
-        // The view does not decide: the staff member may still ask, and QR, which verifies with the owners, says no.
+        // Waiter does not look at the order first: it asks, and QR, which lets Order assess the session, says no.
         qrCommands.refuseCloseWith("UNPAID_BALANCE");
         String key = newKey();
         close(asWaiter(WAITER_A), table.id(), S1, key, versionBody(3)).andExpect(status().isConflict())
@@ -242,91 +230,22 @@ class TableClosureApiTests extends TableCommandApiBase {
     }
 
     @Test
-    void aPaidOrderThatIsStillBeingPreparedOrWaitsForServiceDoesNotMakeTheTableClosable() throws Exception {
-        FakeBackends.Order preparing = withPayment(addOrder(table, S1, "ORD-3", "ACCEPTED", "PENDING", "PREPARING",
-                "2026-10-16T09:00:00Z"), "PAID");
-        FakeBackends.Order ready = withPayment(addOrder(table, S1, "ORD-4", "ACCEPTED", "PENDING", "READY",
-                "2026-10-16T09:05:00Z"), "PAID");
-
-        eligibility(asWaiter(WAITER_A), table.id()).andExpect(jsonPath("$.closableInWaiterView").value(false))
-                .andExpect(jsonPath("$.blockers[?(@.orderId=='" + preparing.id() + "')].code", contains("ORDER_IN_PREPARATION")))
-                .andExpect(jsonPath("$.blockers[?(@.orderId=='" + ready.id() + "')].code", contains("ORDER_AWAITING_SERVICE")));
-
-        qrCommands.refuseCloseWith("ORDER_IN_PREPARATION", "ORDER_AWAITING_SERVICE");
+    void onlyKnownBlockersOfQrsRefusalArePassedOn() throws Exception {
         UUID bill = call(S1, "BILL", "OPEN");
+        qrCommands.refuseCloseWith("ORDER_IN_PREPARATION", "ORDER_ADMISSION_IN_FLIGHT", "NO_LIVE_SESSION");
         closeSession(3).andExpect(status().isConflict())
-                .andExpect(jsonPath("$.blockers", containsInAnyOrder("ORDER_IN_PREPARATION", "ORDER_AWAITING_SERVICE")));
+                .andExpect(jsonPath("$.blockers", containsInAnyOrder("ORDER_IN_PREPARATION", "ORDER_ADMISSION_IN_FLIGHT")));
         assertEquals("OCCUPIED", backends.table(table.id()).status());
         assertEquals("OPEN", callStatus(bill));
     }
 
     @Test
-    void anUncertainPaymentAnAbandonedRefundAndMissingFactsAreAllBlockers() throws Exception {
-        FakeBackends.Order unknown = withPayment(addOrder(table, S1, "ORD-5", "ACCEPTED", "SERVED", "READY", "2026-10-16T09:00:00Z"),
-                "UNKNOWN");
-        backends.settlements.put(unknown.id(), FakeBackends.Settlement.settled("150.00"));
-        FakeBackends.Order pending = withPayment(addOrder(table, S1, "ORD-6", "ACCEPTED", "SERVED", "READY", "2026-10-16T09:01:00Z"),
-                "PENDING");
-        backends.settlements.put(pending.id(), FakeBackends.Settlement.settled("150.00"));
-        FakeBackends.Order refund = withPayment(addOrder(table, S1, "ORD-7", "PARTIALLY_CANCELLED", "SERVED", "READY",
-                "2026-10-16T09:02:00Z"), "PAID");
-        backends.settlements.put(refund.id(), FakeBackends.Settlement.settled("150.00").withRefund("75.00", "0"));
-        FakeBackends.Order silent = withPayment(addOrder(table, S1, "ORD-8", "ACCEPTED", "SERVED", "READY", "2026-10-16T09:03:00Z"),
-                "PAID");
-        backends.withoutSettlement.add(silent.id());
-
-        eligibility(asWaiter(WAITER_A), table.id()).andExpect(jsonPath("$.closableInWaiterView").value(false))
-                .andExpect(jsonPath("$.blockers[?(@.orderId=='" + unknown.id() + "')].code", contains("PAYMENT_OUTCOME_UNKNOWN")))
-                .andExpect(jsonPath("$.blockers[?(@.orderId=='" + pending.id() + "')].code", contains("PAYMENT_IN_PROGRESS")))
-                .andExpect(jsonPath("$.blockers[?(@.orderId=='" + refund.id() + "')].code", contains("REFUND_PENDING")))
-                .andExpect(jsonPath("$.blockers[?(@.orderId=='" + silent.id() + "')].code", contains("SETTLEMENT_UNVERIFIED")));
-    }
-
-    @Test
-    void aTableWithoutALiveSessionAndASessionAlreadyClosingAreReportedAsSuch() throws Exception {
-        FakeBackends.Table free = addTable("13", "AVAILABLE", null);
-        eligibility(asWaiter(WAITER_A), free.id()).andExpect(status().isOk())
-                .andExpect(jsonPath("$.closableInWaiterView").value(false))
-                .andExpect(jsonPath("$.blockers[0].code").value("NO_LIVE_SESSION"))
-                .andExpect(jsonPath("$.tableSessionId").value(nullValue()))
-                .andExpect(jsonPath("$.orderCount").value(0));
-
+    void aCloseThatQrOnlyAcceptedIsShownAsPendingOnTheTable() throws Exception {
         qrCommands.failNextClose(Fault.CLOSING_ONLY);
         closeSession(3).andExpect(status().isAccepted());
-        // QR accepted the close but has not finished: the command is in progress and the views say so.
         assertEquals(1, count("SELECT count(*) FROM table_commands WHERE status = 'IN_PROGRESS'"));
-        eligibility(asWaiter(WAITER_A), table.id()).andExpect(jsonPath("$.pendingCommand.status").value("IN_PROGRESS"))
-                .andExpect(jsonPath("$.pendingCommand.type").value("CLOSE"));
-    }
-
-    @Test
-    void anOutageOfOrderIsAnErrorNeverAClosableAnswer() throws Exception {
-        STUB.override("POST", "/internal/v1/orders/search", request -> DownstreamStub.Response.json(503, "{}"));
-        eligibility(asWaiter(WAITER_A), table.id()).andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.code").value("DEPENDENCY_UNAVAILABLE")).andExpect(jsonPath("$.dependency").value("order"));
-    }
-
-    @Test
-    void aSessionWithMoreOrdersThanTheAssessmentSupportsIsNeverReportedClosable() throws Exception {
-        STUB.override("POST", "/internal/v1/orders/search", request -> DownstreamStub.Response.json(200,
-                FakeBackends.write(Map.of("items", List.of(), "page", 0, "size", 100, "totalElements", 501))));
-        eligibility(asWaiter(WAITER_A), table.id()).andExpect(status().isOk())
-                .andExpect(jsonPath("$.closableInWaiterView").value(false))
-                .andExpect(jsonPath("$.blockers[0].code").value("TOO_MANY_ORDERS_TO_ASSESS"));
-    }
-
-    @Test
-    void inFlightOrderAcceptanceIsQrsToSettleAndWaiterNeverClaimsToHaveProvenItAway() throws Exception {
-        settledServedOrder("ORD-1");
-        UUID bill = call(S1, "BILL", "OPEN");
-        eligibility(asWaiter(WAITER_A), table.id()).andExpect(jsonPath("$.closableInWaiterView").value(true));
-
-        // Between the view and the command an order is being accepted: only QR, which holds the acceptance, can see it.
-        qrCommands.refuseCloseWith("ORDER_ADMISSION_IN_FLIGHT");
-        closeSession(3).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CLOSURE_BLOCKED"))
-                .andExpect(jsonPath("$.blockers", contains("ORDER_ADMISSION_IN_FLIGHT")));
-        assertEquals("OCCUPIED", backends.table(table.id()).status());
-        assertEquals("OPEN", callStatus(bill));
+        tableView().andExpect(jsonPath("$.table.pendingCommand.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.table.pendingCommand.type").value("CLOSE"));
     }
 
     // ----- nothing a client says is evidence -----
@@ -378,14 +297,11 @@ class TableClosureApiTests extends TableCommandApiBase {
     @Test
     void onlyAVerifiedWaiterMayCloseOrAskAndNothingReachesQrOtherwise() throws Exception {
         String url = "/api/v1/waiters/tables/" + table.id() + "/sessions/" + S1 + "/close";
-        String eligibilityUrl = "/api/v1/waiters/tables/" + table.id() + "/closure-eligibility";
         mockMvc.perform(post(url).with(csrf().asHeader())
                 .header("Idempotency-Key", newKey()).contentType(MediaType.APPLICATION_JSON).content(versionBody(3)))
                 .andExpect(status().isUnauthorized());
-        mockMvc.perform(get(eligibilityUrl)).andExpect(status().isUnauthorized());
         for (StaffRole role : List.of(StaffRole.KITCHEN, StaffRole.ADMIN)) {
             close(asStaff(role, RESTAURANT), table.id(), S1, newKey(), versionBody(3)).andExpect(status().isForbidden());
-            eligibility(asStaff(role, RESTAURANT), table.id()).andExpect(status().isForbidden());
         }
         close(as(new AuthenticatedGuest(RESTAURANT, table.id(), S1, UUID.randomUUID()), "GUEST"),
                 table.id(), S1, newKey(), versionBody(3)).andExpect(status().isForbidden());
@@ -400,8 +316,6 @@ class TableClosureApiTests extends TableCommandApiBase {
     @Test
     void aWaiterOfAnotherRestaurantCannotSeeOrCloseThisTable() throws Exception {
         call(S1, "BILL", "OPEN");
-        eligibility(asWaiterOf(OTHER_RESTAURANT), table.id()).andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("TABLE_NOT_FOUND"));
         close(asWaiterOf(OTHER_RESTAURANT), table.id(), S1, newKey(), versionBody(3)).andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("SESSION_NOT_FOUND"));
         assertEquals("OCCUPIED", backends.table(table.id()).status());
