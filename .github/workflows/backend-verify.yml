@@ -1,0 +1,67 @@
+name: Backend verify
+
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - 'pre-push/**'
+      - 'lib/**'
+      - 'ops/qr/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/backend-verify.yml'
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'backend/**'
+      - 'pre-push/**'
+      - 'lib/**'
+      - 'ops/qr/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/backend-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qr-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Test QR key initialization and isolated Compose interpolation
+        run: node --test ops/qr/*.test.mjs
+
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: 'backend/**/pom.xml'
+
+      - name: Check test container runtime
+        run: docker info > /dev/null
+
+      # Surefire activates the test profile. PostgreSQL comes from disposable
+      # Testcontainers databases; Compose, application ENV and Sonar secrets are not needed.
+      # Reuse the manual backend gate: clean verify, non-empty/no-skipped JUnit
+      # reports and at least 80% line coverage in every module. No frontend checks.
+      - name: Run backend clean verify and coverage gate
+        run: sh ./pre-push/pre-push.sh backend dev

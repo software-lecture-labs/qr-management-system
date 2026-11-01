@@ -224,6 +224,9 @@ services:
     environment:
       <<: *database-env
       DB_QR_NAME: ${DB_QR_NAME:?}
+      # Validate at QR startup so an absent QR secret does not block unrelated services.
+      QR_PAYLOAD_ENCRYPTION_KEY: ${QR_PAYLOAD_ENCRYPTION_KEY:-}
+      QR_PUBLIC_ENTRY_URL: ${QR_PUBLIC_ENTRY_URL:-}
     ports:
       - "127.0.0.1:${QR_SERVICE_HOST_PORT:?}:${BACKEND_INTERNAL_PORT:-8080}"
 

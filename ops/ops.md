@@ -77,6 +77,8 @@ Copy-Item .env.example .env.prod
 
 DEV dosyasındaki yerel kimlik bilgilerini doldurun. PROD dosyasında en az `APP_ENV=prod`, `SPRING_PROFILES_ACTIVE=prod`, `COMPOSE_PROJECT_NAME=restofy-prod`, `SWAGGER_ENABLED=false`, gerçek URL/CORS değerleri ve production kimlik bilgilerini düzenleyin. Ardından `use dev` çalıştırın. Önceden başka bir yöntemle oluşturulmuş `.env` varsa ilk geçişte `-Force` kullanın.
 
+QR'ın kalıcı şifreleme anahtarının ilk kurulumu için `node ops/qr/qr-key.mjs init dev` kullanılabilir. Mevcut anahtarı yenilemez; profil/aktif kopya ayrışmışsa üzerine yazmaz. Kullanım ve hata durumları [QR anahtar üretim rehberinde](../docs/qr/qr-key-uretimi.md) açıklanır. Gerçek anahtarı kaybettiğinizde yeniden üretmek eski QR verisini kurtarmaz.
+
 `.env`, `.env.dev`, `.env.prod` ve yedekleri Git tarafından ignore edilir; gerçek şifreleri paylaşmayın. Her iki ortamda ortak olan bir ayarı değiştirirken iki profil dosyasını da güncelleyin.
 
 ## Kalite kontrolü

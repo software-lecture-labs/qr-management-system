@@ -4,7 +4,7 @@
 **Proje:** `C:\Users\T_451\OneDrive\Masaüstü\qr-management-system`  
 **Birincil kaynak:** `docs/gereksinimler/Restofy_Nihai_Gereksinimler.docx`, 14 Ekim 2026 nihai konsolidasyonu.
 
-Bu belge kaynak gereksinimleri kodla karşılaştırır. `[KARAR]` kaynakta belirlenmiş kuralı, `[ÖNERİ]` henüz uygulanmamış tasarımı, `[AÇIK]` ürün/teknik karar ihtiyacını, `[MEVCUT]` repository içinde görülen yapıyı belirtir. Aşağıdaki veri modeli ve tasarım önerileri onaylanmış veya uygulanmış özellik sayılmaz.
+31 Ekim 2026 QR güncellemesi: QR-01–QR-04 yerel kodu ve ADR-QR-001/A uyarlaması mevcuttur; eski tarihli altyapı analizi aşağıdadır. Gerçek Auth/Order/Payment bağlantıları kapalıdır. Bu belge kaynak gereksinimleri kodla karşılaştırır. `[KARAR]` kaynakta belirlenmiş kuralı, `[ÖNERİ]` henüz uygulanmamış tasarımı, `[AÇIK]` ürün/teknik karar ihtiyacını, `[MEVCUT]` repository içinde görülen yapıyı belirtir. Aşağıdaki veri modeli ve tasarım önerileri onaylanmış veya uygulanmış özellik sayılmaz.
 
 İlgili belgeler: [mimari](architecture.md), [veritabanı](database.md), [ER diyagramları](er-diagram.md), [klasör yapısı](folder-structure.md).
 
@@ -63,9 +63,9 @@ Kabul: Pasif, iptal edilmiş veya geçersiz QR işlem oturumu açamaz; yenilenen
 
 **F-QR-02:** İlk tarama ana masa oturumunu açar; ilk tarama dahil her tarama bağlı guest oturumu üretir. Sipariş yokken 15 dakika işlemsizlikte sona erer; sipariş varsa ödeme/masa kapanışına kadar sürer.
 
-Kabul: Eşzamanlı iki ilk tarama tek açık ana oturum ve ayrı guest kayıtları üretir. Süresi dolmuş oturumla sipariş verilmez. Ana ve guest işlemsizlik zamanlarının ayrı mı ortak mı değerlendirileceği D-04'te karara bağlanır.
+Kabul: Eşzamanlı iki ilk tarama tek açık ana oturum ve ayrı guest kayıtları üretir. Süresi dolmuş oturumla sipariş verilmez. [ADR-QR-001 K6](decisions/ADR-QR-001-masa-kapanisi-ve-siparis-koordinasyonu.md) hedefinde gerçek menü/sepet hareketi yalnız ilgili guest ve main süresini yeniler; diğer guest'ler bağımsızdır. Açık sekme/polling yenilemez. Kabul edilmiş sipariş main ve sahibini korur. Gerçek servisler arası entegrasyon henüz uygulanmadı.
 
-**F-QR-03:** Masa/QR aktifliği, tarama bazlı müşteri sayısı, doluluk ve oturum durumu gösterilir; yetkili garson/yönetici kapanışı bağlı guest oturumlarını bitirir.
+**F-QR-03:** Masa/QR aktifliği, tarama bazlı müşteri sayısı, doluluk ve oturum durumu gösterilir. [ADR-QR-001 K1–K3](decisions/ADR-QR-001-masa-kapanisi-ve-siparis-koordinasyonu.md) ile yeni hedef, gerçek siparişler tamamlanıp mali koşullar sağlanınca ayrıca garson/admin onayı olmadan main ve bütün aktif guest'lerin otomatik kapanmasıdır. Siparişsiz guest ödeme beklenen kişi sayılmaz. QR kodu bu karara uyarlandı; 31 Ekim K11 ile aynı Order/Payment koşullarına bağlı yetkili WAITER/ADMIN close ve durum API'leri geri eklendi. Otomatik kapanış korunur; staff isteği force veya ödeme kanıtı değildir. Gerçek Order/Payment adaptörü kapalıdır; tam servisler arası akış henüz uygulanmadı.
 
 Kabul: Tarama sayısı gösterilir; bunun tekil insan sayısı olmadığı ayrıca açıklanır. Aynı cihazın tekrar taramasını tekilleştirme politikası açık tutulur. Aktif sipariş/bakiye varken normal kapanışın engellenmesi önerilir.
 
@@ -119,13 +119,13 @@ Kabul: Kapalı ürün restart sonrası kapalı kalır. Fire; ürün, pozitif ade
 
 Kabul: Okundu işareti çağrıyı çözmez. İki garsonun aynı çağrıyı sahiplenmesi/siparişi teslim etmesi version kontrolüyle çakışma üretir. Teslimin otoritesi Order, garson komutu Waiter üzerinden önerilir.
 
-**F-WT-03:** Ödeme/iptal koşulları ve personel kapanışı sonrası ana/guest oturumları kapanır, masa temizlenip müsait yapılır.
+**F-WT-03:** [ADR-QR-001 K1/K11](decisions/ADR-QR-001-masa-kapanisi-ve-siparis-koordinasyonu.md) normal otomatik kapanışı korur ve yetkili garson/admin'in aynı güvenli kapanışı istemesini geri getirir. Normal istek, tamamlanmış sipariş ve Order'ın Payment'tan doğruladığı mali uygunluk koşullarını atlamaz. QR komutu/sonucu kalıcı ve sorgulanabilirdir; Waiter yalnız kesin CLOSED sonrası çağrılarını sonlandırır. Temizlendi ayrı yetkili işlemdir. QR kodu mevcuttur; gerçek Order/Payment/Waiter kimlik ve transport entegrasyonu yoktur.
 
 Kabul: `OCCUPIED → CLEANING → AVAILABLE` önerilir; kapanış ve temizlik aynı olay sayılmaz. Kapanış devam ederken yeni sipariş kabul edilmez. Yerleşik 15 dakika ve Wi-Fi üç saat süreleri birbirinden bağımsızdır.
 
 ### 4.6 Ödeme ve değerlendirme
 
-**F-PY-01:** Restoranda ve online ödeme; yemek kartı, bahşiş ve bölüşme opsiyonel. Admin yöntemleri kontrol eder.
+**F-PY-01:** [ADR K10](decisions/ADR-QR-001-masa-kapanisi-ve-siparis-koordinasyonu.md) ile nakit ve online seçenekleri Payment geliştirmesine dahildir. Nakit yalnız yetkili personelin Payment kaydıyla, online yalnız doğrulanmış sağlayıcı/işlem kanıtıyla kesinleşir; QR/Waiter client beyanı kanıt değildir. Restoranda ve online ödeme; yemek kartı, bahşiş ve bölüşme opsiyonel. Admin yöntemleri kontrol eder.
 
 Kabul: Kapalı yöntemden yeni işlem başlatılmaz. Restoranda ödeme yalnız yetkili personel teyidiyle başarılı olur. Gerçek online sağlayıcı entegrasyonu ve sürüm sınırı D-01'e bağlıdır.
 
@@ -175,7 +175,7 @@ Kaynak Word'deki teknik maddeler öneridir; repository'deki `docs/SECURITY.md` u
 - **D-01 / Ürün + ödeme:** Demo/gerçek ödeme sürüm sınırı, sağlayıcı, ön/son ödeme ve iptal/iade/başarılı geç callback davranışı.
 - **D-02 / Ürün + Kitchen + Order:** Ürün bazlı iptalin sipariş bazlı hazırlığa etkisi; kalan ürünler ve tam iptal ilişkisi; READY sipariş iptal sınırı.
 - **D-03 / Ürün + Rating:** Nakit ödeyen guest puanlayabilir mi? Oy tekilliği ve değerlendirme süresi nasıl uygulanır?
-- **D-04 / QR:** 15 dakika ana/guest işlemsizliği, anlamlı aktivite, tüm siparişler iptal olunca süre ve siparişin oturumu hangi anda uzattığı.
+- **D-04 / QR — Karar kaydı:** [ADR-QR-001](decisions/ADR-QR-001-masa-kapanisi-ve-siparis-koordinasyonu.md) bağımsız guest/main aktivitesi, anlamlı menü/sepet etkileşimi ve sipariş koruması hedefini kaydeder; önceki güvenli iptal sonrası 15 dakika kuralı korunur. Gerçek aktarım ve süre sınırı koordinasyonu uygulama işidir; karar kaydı bunların test edildiği anlamına gelmez.
 - **D-05 / Ürün + Admin + Auth:** Garson login/mesai ile sipariş açılması; son garson logout davranışı ve admin OFF önceliği.
 - **D-06 / Kitchen UX:** Yeni gelen üstte / en eski bekleyen önce ayrımı ve gecikme etiketi eşiği.
 - **D-07 / Timer + operasyon:** Ağ cihazı/API, cihaz eşleme, izin gereksinimleri, süre yenileme ve kesme başarısızlığının telafisi.
@@ -185,8 +185,8 @@ Kaynak Word'deki teknik maddeler öneridir; repository'deki `docs/SECURITY.md` u
 - **D-11 / Veri + operasyon:** Saklama, anonimleştirme, yedek, RPO/RTO ve hacim hedefleri.
 - **D-12 / Raporlama:** Gün sonu mutfak sayılarında gün içinde READY olan mı, gün sonunda READY kalan mı? Öneri: günün kabul kohortunda anlık durum + ayrı durum olayı sayacı.
 - **D-13 / Veri + ekip:** Auth migration aralığı kaynak listede yok; mevcut aralıkların dolması halinde genişletme politikası belirlenmeli.
-- **D-14 / QR + güvenlik:** QR revoke/yenileme mevcut guest'leri de bitirir mi; QR görüntüleme/yeniden indirmede ham token güvenli saklama/yeniden üretme yaklaşımı.
-- **D-15 / Ürün:** Başka guest siparişlerini görme, ortak masa hesabı ve guest ayrıldığında ödeme hakkı. Varsayılan öneri kendi siparişine erişimdir.
+- **D-14 / QR + güvenlik — Karar ve gelecek kurtarma:** Normal rotate mevcut main/guest'leri kapatmaz. ADR K12'de ayrı ADMIN force-rotate/oturum sonlandırma seçildi: açık sipariş/UNKNOWN uyarısı, zorunlu gerekçe ve ikinci onay; borç/audit/uzlaştırma korunur. Force API/paneli ve kurtarma engeli henüz uygulanmadı. QR yeniden indirme için mevcut digest + şifreli payload korunur.
+- **D-15 / Ürün — MVP ödeme kapsamı kararlaştırıldı:** [ADR-QR-001 K4](decisions/ADR-QR-001-masa-kapanisi-ve-siparis-koordinasyonu.md) uyarınca müşteri yalnız kendi guest siparişlerini öder; ortak hesap/başkası adına ödeme MVP dışında. Başka guest siparişlerini görme veya oturum sonrası ödeme erişimi bu kararla genişletilmedi; diğer D-15 başlıkları açık kalır.
 
 ## 7. Önerilen geliştirme sırası
 
