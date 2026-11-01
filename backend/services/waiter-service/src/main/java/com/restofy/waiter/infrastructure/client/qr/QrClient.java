@@ -32,12 +32,12 @@ import java.util.UUID;
  * through the Gateway. Besides the reads it carries the two table commands, closing a main session and marking a
  * table cleaned: QR alone decides them, and nothing here sends a command again on its own.
  *
- * <p>Only the close command and its status follow a contract QR has implemented: ADR-QR-001 K11 under
- * {@code /api/v1/internal} (reviewed at QR commit 1f98fbb). QR keeps those endpoints closed until the Waiter service
- * identity and the staff delegation are verified; Waiter sends neither yet, so QR answers 401 today. The table
- * reads, the guest verification and the cleaning command still use Waiter's DRAFT {@code /internal/v1} paths: QR
- * has no internal counterpart for them, and moving them onto QR's staff endpoints would change their identity and
- * idempotency semantics, so they wait for a shared contract.
+ * <p>Every call uses the shared {@code /api/v1/internal} prefix. Only the close command and its status follow a
+ * contract QR has implemented: ADR-QR-001 K11 (reviewed at QR commit 1f98fbb). QR keeps those endpoints closed until
+ * the Waiter service identity and the staff delegation are verified; Waiter sends neither yet, so QR answers 401
+ * today. The table reads, the guest verification and the cleaning command are Waiter's DRAFT paths under the same
+ * prefix: QR has no internal counterpart for them yet, and moving them onto QR's staff endpoints would change their
+ * identity and idempotency semantics, so they wait for a shared contract.
  *
  * <p>QR's answers are read with unknown fields ignored, so an additive field of QR does not turn into an unknown
  * outcome; identifiers, enum values, states and the cross-checks below are still enforced. Incoming requests of
@@ -69,7 +69,7 @@ public class QrClient {
         while (true) {
             int requested = page;
             QrTablePageDto result = DownstreamCalls.execute(DEPENDENCY, () -> client.get()
-                    .uri(uri -> uri.path("/internal/v1/tables")
+                    .uri(uri -> uri.path("/api/v1/internal/tables")
                             .queryParam("restaurantId", restaurantId)
                             .queryParam("page", requested)
                             .queryParam("size", PAGE_SIZE)
@@ -99,7 +99,7 @@ public class QrClient {
 
     public Optional<QrTableDto> findTable(UUID restaurantId, UUID tableId) {
         Optional<QrTableDto> table = DownstreamCalls.executeOptional(DEPENDENCY, () -> client.get()
-                .uri(uri -> uri.path("/internal/v1/tables/{tableId}")
+                .uri(uri -> uri.path("/api/v1/internal/tables/{tableId}")
                         .queryParam("restaurantId", restaurantId).build(tableId))
                 .retrieve().body(QrTableDto.class));
         table.ifPresent(found -> {
@@ -116,7 +116,7 @@ public class QrClient {
      */
     public Optional<QrGuestContextDto> verifyGuest(String guestToken) {
         return DownstreamCalls.executeOptional(DEPENDENCY, () -> client.post()
-                .uri("/internal/v1/guest-sessions/verify")
+                .uri("/api/v1/internal/guest-sessions/verify")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(new QrGuestVerifyRequest(guestToken))
                 .retrieve().body(QrGuestContextDto.class));
@@ -206,7 +206,7 @@ public class QrClient {
     public QrCleanResultDto markCleaned(QrCleanRequestDto command) {
         try {
             QrCleanResultDto answer = client.post()
-                    .uri("/internal/v1/tables/{tableId}/cleaned", command.tableId())
+                    .uri("/api/v1/internal/tables/{tableId}/cleaned", command.tableId())
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("Idempotency-Key", command.commandId().toString())
                     .body(command)
@@ -227,7 +227,7 @@ public class QrClient {
     /** What QR recorded for a cleaning command id; empty if QR has no record of it. */
     public Optional<QrCleanResultDto> cleanStatus(UUID restaurantId, UUID tableId, UUID commandId) {
         Optional<QrCleanResultDto> status = DownstreamCalls.executeOptional(DEPENDENCY, () -> client.get()
-                .uri(uri -> uri.path("/internal/v1/tables/{tableId}/clean-commands/{commandId}")
+                .uri(uri -> uri.path("/api/v1/internal/tables/{tableId}/clean-commands/{commandId}")
                         .queryParam("restaurantId", restaurantId).build(tableId, commandId))
                 .retrieve().body(QrCleanResultDto.class));
         status.ifPresent(found -> {

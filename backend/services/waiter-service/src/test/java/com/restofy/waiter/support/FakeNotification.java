@@ -62,7 +62,7 @@ public final class FakeNotification {
     private final Deque<Fault> faults = new ArrayDeque<>();
 
     public FakeNotification installOn(DownstreamStub stub) {
-        stub.route("POST", "/internal/v1/service-call-events", this::handle);
+        stub.route("POST", "/api/v1/internal/service-call-events", this::handle);
         return this;
     }
 

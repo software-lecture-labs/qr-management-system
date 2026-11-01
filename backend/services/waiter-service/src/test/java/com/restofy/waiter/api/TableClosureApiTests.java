@@ -200,7 +200,7 @@ class TableClosureApiTests extends TableCommandApiBase {
     void waiterOffersNoClosureVerdictOfItsOwn() throws Exception {
         mockMvc.perform(get("/api/v1/waiters/tables/" + table.id() + "/closure-eligibility").with(asWaiter(WAITER_A)))
                 .andExpect(status().isNotFound());
-        assertEquals(0, STUB.requests("POST", "/internal/v1/orders/search").size(), "No order is read to judge a closure");
+        assertEquals(0, STUB.requests("POST", "/api/v1/internal/orders/search").size(), "No order is read to judge a closure");
     }
 
     @Test

@@ -21,7 +21,7 @@ import java.util.UUID;
 public class NotificationClient {
 
     public static final String DEPENDENCY = "notification";
-    public static final String EVENTS_PATH = "/internal/v1/service-call-events";
+    public static final String EVENTS_PATH = "/api/v1/internal/service-call-events";
 
     private final RestClient client;
 

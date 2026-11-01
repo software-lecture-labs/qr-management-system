@@ -51,7 +51,7 @@ class OrderServeApiTests extends ApiTestBase {
     private static final UUID S1 = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
     private static final UUID WAITER_A = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
     private static final UUID WAITER_B = UUID.fromString("00000000-0000-0000-0000-0000000000bb");
-    private static final String SERVE_POST = "/internal/v1/orders/[0-9a-f-]{36}/serve";
+    private static final String SERVE_POST = "/api/v1/internal/orders/[0-9a-f-]{36}/serve";
 
     private FakeBackends.Table table;
     private FakeBackends.Order order;
@@ -635,7 +635,7 @@ class OrderServeApiTests extends ApiTestBase {
     @Test
     void servingNeedsOnlyOrderAndNeverQrOrKitchen() throws Exception {
         serveOnce(order).andExpect(status().isOk());
-        assertTrue(STUB.requests().stream().allMatch(r -> r.path().startsWith("/internal/v1/orders/")),
+        assertTrue(STUB.requests().stream().allMatch(r -> r.path().startsWith("/api/v1/internal/orders/")),
                 "Only Order is involved in the command: " + STUB.requests().stream().map(DownstreamStub.Request::path).toList());
     }
 }

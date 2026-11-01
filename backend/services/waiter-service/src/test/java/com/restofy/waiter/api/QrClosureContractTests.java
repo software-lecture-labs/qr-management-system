@@ -86,7 +86,7 @@ class QrClosureContractTests extends TableCommandApiBase {
         assertEquals(WAITER_A.toString(), body.get("requestedByUserId").asString());
         assertEquals(3, body.get("expectedVersion").asLong());
         assertEquals("Hesap kapandı", body.get("reason").asString());
-        assertTrue(STUB.requests("POST", "/internal/v1/tables/.*").isEmpty(), "The draft close path is gone");
+        assertTrue(STUB.requests("POST", "/internal/v1/tables/.*").isEmpty(), "The old draft prefix is gone");
 
         commandStatus(table.id(), commandId).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("COMPLETED"));
         DownstreamStub.Request get = STUB.requests("GET", CLOSE_STATUS_GET).getFirst();

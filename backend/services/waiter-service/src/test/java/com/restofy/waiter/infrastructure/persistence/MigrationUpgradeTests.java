@@ -90,7 +90,7 @@ class MigrationUpgradeTests {
         flyway("latest").migrate();
 
         try (Connection connection = probe(); Statement statement = connection.createStatement()) {
-            assertEquals(List.of("101", "102", "103", "104", "105", "106"), appliedVersions(connection));
+            assertEquals(List.of("101", "102", "103", "104", "105"), appliedVersions(connection));
             try (var checksum = statement.executeQuery("SELECT checksum FROM flyway_schema_history WHERE version = '101'")) {
                 assertTrue(checksum.next());
                 assertEquals(V101_CHECKSUM, checksum.getInt(1), "V101 is applied history and must never be edited");

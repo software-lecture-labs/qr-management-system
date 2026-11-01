@@ -148,10 +148,10 @@ class WaiterTableApiTests extends ApiTestBase {
                 .andExpect(jsonPath("$.totalElements").value(5))
                 .andExpect(jsonPath("$.totalPages").value(3))
                 .andExpect(jsonPath("$.items[*].tableNumber").value(contains("201", "230")));
-        assertEquals(2, STUB.requests("GET", "/internal/v1/tables").size(), "250 tables need exactly two QR pages");
-        assertEquals(1, STUB.requests("POST", "/internal/v1/orders/session-summaries").size(),
+        assertEquals(2, STUB.requests("GET", "/api/v1/internal/tables").size(), "250 tables need exactly two QR pages");
+        assertEquals(1, STUB.requests("POST", "/api/v1/internal/orders/session-summaries").size(),
                 "One batch request for all sessions, not one request per table");
-        assertEquals(0, STUB.requests("GET", "/internal/v1/tables/[0-9a-f-]{36}").size());
+        assertEquals(0, STUB.requests("GET", "/api/v1/internal/tables/[0-9a-f-]{36}").size());
     }
 
     @Test
@@ -175,7 +175,7 @@ class WaiterTableApiTests extends ApiTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.table.session").value(nullValue()))
                 .andExpect(jsonPath("$.openServiceRequests", hasSize(0)));
-        assertEquals(0, STUB.requests("POST", "/internal/v1/orders/.*").size(), "No session, so nothing to ask Order");
+        assertEquals(0, STUB.requests("POST", "/api/v1/internal/orders/.*").size(), "No session, so nothing to ask Order");
     }
 
     @Test
@@ -217,7 +217,7 @@ class WaiterTableApiTests extends ApiTestBase {
                 .andExpect(jsonPath("$.items[*].orderNumber").value(contains("ORD-2", "ORD-1", "ORD-3")))
                 .andExpect(jsonPath("$.items[*].session.current").value(contains(true, true, true)))
                 .andExpect(jsonPath("$.items[*].table.id").value(contains(t1.id().toString(), t1.id().toString(), t1.id().toString())));
-        DownstreamStub.Request search = STUB.requests("POST", "/internal/v1/orders/search").getFirst();
+        DownstreamStub.Request search = STUB.requests("POST", "/api/v1/internal/orders/search").getFirst();
         var body = FakeBackends.read(search.body());
         assertEquals(RESTAURANT.toString(), body.get("restaurantId").asString());
         assertEquals(t1.id().toString(), body.get("tableId").asString());
@@ -249,13 +249,13 @@ class WaiterTableApiTests extends ApiTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items", hasSize(0)))
                 .andExpect(jsonPath("$.totalElements").value(0));
-        assertEquals(0, STUB.requests("POST", "/internal/v1/orders/search").size());
+        assertEquals(0, STUB.requests("POST", "/api/v1/internal/orders/search").size());
     }
 
     @Test
     void ordersFromAnEarlierSessionReturnedByAMisbehavingOrderServiceAreRejected() throws Exception {
         FakeBackends.Order old = backends.orders.stream().filter(o -> o.number().equals("ORD-OLD")).findFirst().orElseThrow();
-        STUB.override("POST", "/internal/v1/orders/search", request -> DownstreamStub.Response.json(200, FakeBackends.write(Map.of(
+        STUB.override("POST", "/api/v1/internal/orders/search", request -> DownstreamStub.Response.json(200, FakeBackends.write(Map.of(
                 "items", List.of(FakeBackends.orderJson(old)), "page", 0, "size", 20, "totalElements", 1))));
         mockMvc.perform(get("/api/v1/waiters/tables/" + t1.id() + "/orders").with(asWaiter()))
                 .andExpect(status().isBadGateway())

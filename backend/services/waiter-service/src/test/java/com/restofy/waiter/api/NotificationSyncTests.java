@@ -100,7 +100,7 @@ class NotificationSyncTests extends ApiTestBase {
     }
 
     private int eventRequests() {
-        return STUB.requests("POST", "/internal/v1/service-call-events").size();
+        return STUB.requests("POST", "/api/v1/internal/service-call-events").size();
     }
 
     // ----- what is sent -----
@@ -131,11 +131,11 @@ class NotificationSyncTests extends ApiTestBase {
         assertEquals("OPEN", body.get("call").get("status").asString());
         assertEquals(0, body.get("call").get("version").asInt());
 
-        String raw = STUB.requests("POST", "/internal/v1/service-call-events").getFirst().body();
+        String raw = STUB.requests("POST", "/api/v1/internal/service-call-events").getFirst().body();
         assertFalse(raw.contains("Gizli"), "The guest's free text is not sent");
         assertFalse(raw.contains(lastGuest.token()), "The guest credential is not sent");
         assertFalse(raw.contains(lastGuest.guestSessionId().toString()), "The guest identity is not sent");
-        assertNull(STUB.requests("POST", "/internal/v1/service-call-events").getFirst().header("Authorization"),
+        assertNull(STUB.requests("POST", "/api/v1/internal/service-call-events").getFirst().header("Authorization"),
                 "No service credential is invented before the service identity contract exists");
         assertEquals(List.of("DELIVERED"), deliveryStatuses(id));
         assertEquals("DELIVERED", call(id).get("notification").get("status").asString());
@@ -256,7 +256,7 @@ class NotificationSyncTests extends ApiTestBase {
         assertEquals("RESOLVED", callStatusInDatabase(id));
         assertEquals("DELIVERED", call(id).get("notification").get("status").asString());
         // Three attempts, one operation: the same event id and the same body every time.
-        List<DownstreamStub.Request> attempts = STUB.requests("POST", "/internal/v1/service-call-events");
+        List<DownstreamStub.Request> attempts = STUB.requests("POST", "/api/v1/internal/service-call-events");
         assertEquals(3, attempts.size());
         assertEquals(1, attempts.stream().map(r -> r.header("Idempotency-Key")).distinct().count());
         assertEquals(1, attempts.stream().map(DownstreamStub.Request::body).distinct().count());
@@ -267,7 +267,7 @@ class NotificationSyncTests extends ApiTestBase {
         UUID open = raise("WAITER");
         UUID resolved = raise("HELP");
         staffCommand(asWaiter(WAITER_A), resolved, "resolve", newKey(), 0).andExpect(status().isOk());
-        STUB.override("POST", "/internal/v1/service-call-events", request -> Response.json(503, "{}"));
+        STUB.override("POST", "/api/v1/internal/service-call-events", request -> Response.json(503, "{}"));
         dispatcher.dispatchDue(t0);
 
         mockMvc.perform(get("/api/v1/waiters/tables").with(asWaiter()))
@@ -329,7 +329,7 @@ class NotificationSyncTests extends ApiTestBase {
             "409|{}"})
     void anUnusableAnswerIsNeverTakenAsDelivered(int status, String answer) throws Exception {
         raise("HELP");
-        STUB.override("POST", "/internal/v1/service-call-events", request -> Response.json(status, answer));
+        STUB.override("POST", "/api/v1/internal/service-call-events", request -> Response.json(status, answer));
         assertEquals(new Round(1, 0, 1, 0), dispatcher.dispatchDue(t0));
         assertEquals("BAD_RESPONSE", jdbc.queryForObject("SELECT last_error_code FROM notification_deliveries", String.class));
         assertEquals("PENDING", jdbc.queryForObject("SELECT status FROM notification_deliveries", String.class));
@@ -338,7 +338,7 @@ class NotificationSyncTests extends ApiTestBase {
     @Test
     void anEmptyAnswerBodyIsNeverTakenAsDelivered() throws Exception {
         raise("HELP");
-        STUB.override("POST", "/internal/v1/service-call-events", request -> Response.json(200, ""));
+        STUB.override("POST", "/api/v1/internal/service-call-events", request -> Response.json(200, ""));
         assertEquals(new Round(1, 0, 1, 0), dispatcher.dispatchDue(t0));
         assertEquals("PENDING", jdbc.queryForObject("SELECT status FROM notification_deliveries", String.class));
     }
@@ -346,7 +346,7 @@ class NotificationSyncTests extends ApiTestBase {
     @Test
     void anAnswerForAnotherEventIsNotAcceptedAsTheAcknowledgement() throws Exception {
         raise("HELP");
-        STUB.override("POST", "/internal/v1/service-call-events",
+        STUB.override("POST", "/api/v1/internal/service-call-events",
                 request -> Response.json(200, "{\"eventId\":\"" + UUID.randomUUID() + "\",\"outcome\":\"APPLIED\"}"));
         assertEquals(new Round(1, 0, 1, 0), dispatcher.dispatchDue(t0));
         assertEquals("PENDING", jdbc.queryForObject("SELECT status FROM notification_deliveries", String.class));

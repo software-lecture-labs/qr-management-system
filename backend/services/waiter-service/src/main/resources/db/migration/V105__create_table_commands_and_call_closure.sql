@@ -24,6 +24,10 @@ CREATE TABLE table_commands (
     cancelled_call_count integer,
     table_version_after  bigint,
     ready_for_new_customer boolean,
+    -- ADR-QR-001 K13: QR confirmed the close (CLOSED) but still names RECONCILIATION_REQUIRED in its blockers because
+    -- Order found a scope drift after QR applied the closure. The closure stays a definite fact; the flag only keeps
+    -- that warning with the completed command. Waiter never reopens, resends or settles anything because of it.
+    reconciliation_required boolean     NOT NULL DEFAULT false,
     version              bigint       NOT NULL DEFAULT 0,
     created_at           timestamptz  NOT NULL,
     updated_at           timestamptz  NOT NULL,
@@ -49,7 +53,10 @@ CREATE TABLE table_commands (
         OR (table_version_after IS NOT NULL AND ready_for_new_customer IS NOT NULL)),
     -- A completed close always carries what QR confirmed and how many calls were ended with the session.
     CONSTRAINT ck_table_commands_close_done CHECK (status <> 'COMPLETED' OR command_type <> 'CLOSE'
-        OR (qr_closed_at IS NOT NULL AND ended_guest_sessions IS NOT NULL AND cancelled_call_count IS NOT NULL))
+        OR (qr_closed_at IS NOT NULL AND ended_guest_sessions IS NOT NULL AND cancelled_call_count IS NOT NULL)),
+    -- Only a completed close can carry the K13 warning.
+    CONSTRAINT ck_table_commands_reconciliation CHECK (
+        NOT reconciliation_required OR (command_type = 'CLOSE' AND status = 'COMPLETED'))
 );
 
 -- At most one unanswered close per main session and one unanswered cleaning per table: a second command with

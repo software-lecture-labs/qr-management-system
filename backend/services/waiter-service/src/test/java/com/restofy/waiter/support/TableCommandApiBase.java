@@ -39,8 +39,8 @@ public abstract class TableCommandApiBase extends ApiTestBase {
     protected static final String CLOSE_POST = "/api/v1/internal/tables/[0-9a-f-]{36}/sessions/[0-9a-f-]{36}/close";
     protected static final String CLOSE_STATUS_GET =
             "/api/v1/internal/tables/[0-9a-f-]{36}/sessions/[0-9a-f-]{36}/close-commands/[0-9a-f-]{36}";
-    protected static final String CLEAN_POST = "/internal/v1/tables/[0-9a-f-]{36}/cleaned";
-    protected static final String CLEAN_STATUS_GET = "/internal/v1/tables/[0-9a-f-]{36}/clean-commands/[0-9a-f-]{36}";
+    protected static final String CLEAN_POST = "/api/v1/internal/tables/[0-9a-f-]{36}/cleaned";
+    protected static final String CLEAN_STATUS_GET = "/api/v1/internal/tables/[0-9a-f-]{36}/clean-commands/[0-9a-f-]{36}";
 
     @Autowired
     protected NotificationDispatcher dispatcher;

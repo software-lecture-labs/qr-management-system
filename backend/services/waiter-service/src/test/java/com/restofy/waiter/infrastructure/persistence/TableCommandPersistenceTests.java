@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Real PostgreSQL (Testcontainers): Flyway applies V101-V106, Hibernate validates the new entity against it, and
+ * Real PostgreSQL (Testcontainers): Flyway applies V101-V105, Hibernate validates the new entity against it, and
  * the database itself enforces the rules of the table command record: one unanswered close per main session, one
  * unanswered cleaning per table, one completed close per session, the shape of every status, the reconciliation
  * warning on completed closes only and the tenant-safe link from a cancelled call to the command that ended it.

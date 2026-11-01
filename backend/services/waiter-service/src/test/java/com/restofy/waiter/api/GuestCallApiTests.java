@@ -99,7 +99,7 @@ class GuestCallApiTests extends ApiTestBase {
     @Test
     void qrIsAskedToVerifyTheCredentialInTheBodyNeverInTheUrl() throws Exception {
         raiseCall(guest, "WAITER").andExpect(status().isCreated());
-        List<DownstreamStub.Request> verifications = STUB.requests("POST", "/internal/v1/guest-sessions/verify");
+        List<DownstreamStub.Request> verifications = STUB.requests("POST", "/api/v1/internal/guest-sessions/verify");
         assertEquals(1, verifications.size());
         DownstreamStub.Request verification = verifications.getFirst();
         assertTrue(verification.body().contains(guest.token()));
@@ -383,7 +383,7 @@ class GuestCallApiTests extends ApiTestBase {
 
     @Test
     void qrOutageIsServiceUnavailableNotAnonymousAndNotAWrite() throws Exception {
-        STUB.override("POST", "/internal/v1/guest-sessions/verify", request -> Response.json(503, "{}"));
+        STUB.override("POST", "/api/v1/internal/guest-sessions/verify", request -> Response.json(503, "{}"));
         raiseCall(guest, "WAITER").andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("DEPENDENCY_UNAVAILABLE")).andExpect(jsonPath("$.dependency").value("qr"));
         assertNothingWritten();
@@ -391,7 +391,7 @@ class GuestCallApiTests extends ApiTestBase {
 
     @Test
     void qrTimeoutIsAGatewayTimeoutWithoutInternalAddresses() throws Exception {
-        STUB.override("POST", "/internal/v1/guest-sessions/verify", request -> Response.json(200, "{}").delayed(1500));
+        STUB.override("POST", "/api/v1/internal/guest-sessions/verify", request -> Response.json(200, "{}").delayed(1500));
         String body = raiseCall(guest, "WAITER").andExpect(status().isGatewayTimeout())
                 .andExpect(jsonPath("$.code").value("DEPENDENCY_TIMEOUT")).andReturn().getResponse().getContentAsString();
         assertFalse(body.contains("127.0.0.1"));
@@ -400,7 +400,7 @@ class GuestCallApiTests extends ApiTestBase {
 
     @Test
     void qrRejectingWaiterItselfIsABadGatewayNotAGuestProblem() throws Exception {
-        STUB.override("POST", "/internal/v1/guest-sessions/verify", request -> Response.json(401, "{}"));
+        STUB.override("POST", "/api/v1/internal/guest-sessions/verify", request -> Response.json(401, "{}"));
         raiseCall(guest, "WAITER").andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("DEPENDENCY_REJECTED"));
         assertNothingWritten();
@@ -416,7 +416,7 @@ class GuestCallApiTests extends ApiTestBase {
             "{\"restaurantId\":\"00000000-0000-0000-0000-00000000a001\",\"tableId\":\"00000000-0000-0000-0000-0000000000f1\","
                     + "\"tableSession\":{\"id\":\"00000000-0000-0000-0000-0000000000a1\",\"status\":\"OPEN\"}}"})
     void anIncompleteOrUnknownQrAnswerIsNeverTrustedAsAnIdentity(String answer) throws Exception {
-        STUB.override("POST", "/internal/v1/guest-sessions/verify", request -> Response.json(200, answer));
+        STUB.override("POST", "/api/v1/internal/guest-sessions/verify", request -> Response.json(200, answer));
         raiseCall(guest, "WAITER").andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("DEPENDENCY_BAD_RESPONSE"));
         assertNothingWritten();
@@ -426,7 +426,7 @@ class GuestCallApiTests extends ApiTestBase {
     void creatingACallNeedsNeitherOrderNorNotificationToBeUp() throws Exception {
         // Order and Notification have no routes that answer; only QR's verification is needed to raise a call.
         raiseCall(guest, "BILL").andExpect(status().isCreated());
-        assertTrue(STUB.requests("POST", "/internal/v1/service-call-events").isEmpty(),
+        assertTrue(STUB.requests("POST", "/api/v1/internal/service-call-events").isEmpty(),
                 "Notification is told by the background queue, never inside the request");
     }
 }

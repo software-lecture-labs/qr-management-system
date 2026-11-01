@@ -56,8 +56,8 @@ public final class FakeQrCommands {
     private static final Pattern CLOSE_PATH = Pattern.compile("/api/v1/internal/tables/" + ID + "/sessions/" + ID + "/close");
     private static final Pattern CLOSE_STATUS_PATH =
             Pattern.compile("/api/v1/internal/tables/" + ID + "/sessions/" + ID + "/close-commands/" + ID);
-    private static final Pattern CLEAN_PATH = Pattern.compile("/internal/v1/tables/" + ID + "/cleaned");
-    private static final Pattern CLEAN_STATUS_PATH = Pattern.compile("/internal/v1/tables/" + ID + "/clean-commands/" + ID);
+    private static final Pattern CLEAN_PATH = Pattern.compile("/api/v1/internal/tables/" + ID + "/cleaned");
+    private static final Pattern CLEAN_STATUS_PATH = Pattern.compile("/api/v1/internal/tables/" + ID + "/clean-commands/" + ID);
     private static final Instant CLOSED_AT = Instant.parse("2026-10-16T11:00:00Z");
 
     private final FakeBackends backends;

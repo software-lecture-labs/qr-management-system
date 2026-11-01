@@ -156,7 +156,7 @@ class RestClientConfigurationTests {
         for (DownstreamStub.Request request : peer.requests()) {
             assertNull(request.header("Authorization"), "No token may be invented before the service identity contract exists");
             assertNull(request.header("Cookie"));
-            assertTrue(request.path().startsWith("/internal/v1/"), request.path());
+            assertTrue(request.path().startsWith("/api/v1/internal/"), request.path());
         }
     }
 

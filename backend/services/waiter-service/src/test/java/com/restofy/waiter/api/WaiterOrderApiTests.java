@@ -146,7 +146,7 @@ class WaiterOrderApiTests extends ApiTestBase {
         backends.tables.add(new FakeBackends.Table(UUID.randomUUID(), RESTAURANT, "1", "AVAILABLE", null));
         listOrders("").andExpect(status().isOk()).andExpect(jsonPath("$.items", hasSize(0)))
                 .andExpect(jsonPath("$.totalElements").value(0));
-        assertEquals(0, STUB.requests("POST", "/internal/v1/orders/search").size());
+        assertEquals(0, STUB.requests("POST", "/api/v1/internal/orders/search").size());
     }
 
     @Test
@@ -238,21 +238,21 @@ class WaiterOrderApiTests extends ApiTestBase {
     void orderServiceThatLeaksAnotherTenantsOrderIsNeverRelayed() throws Exception {
         FakeBackends.Order foreign = backends.orders.stream().filter(o -> o.restaurantId().equals(OTHER_RESTAURANT)).findFirst()
                 .orElseThrow();
-        STUB.override("GET", "/internal/v1/orders/[0-9a-f-]{36}",
+        STUB.override("GET", "/api/v1/internal/orders/[0-9a-f-]{36}",
                 request -> DownstreamStub.Response.json(200, FakeBackends.write(FakeBackends.orderJson(foreign))));
         mockMvc.perform(get("/api/v1/waiters/orders/" + foreign.id()).with(asWaiter()))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("DEPENDENCY_BAD_RESPONSE"))
                 .andExpect(content().string(not(containsString("ORD-FOREIGN"))));
 
-        STUB.override("POST", "/internal/v1/orders/search", request -> DownstreamStub.Response.json(200, FakeBackends.write(Map.of(
+        STUB.override("POST", "/api/v1/internal/orders/search", request -> DownstreamStub.Response.json(200, FakeBackends.write(Map.of(
                 "items", List.of(FakeBackends.orderJson(foreign)), "page", 0, "size", 20, "totalElements", 1))));
         listOrders("").andExpect(status().isBadGateway()).andExpect(content().string(not(containsString("ORD-FOREIGN"))));
     }
 
     @Test
     void orderServiceThatIgnoresTheRequestedViewIsDetected() throws Exception {
-        STUB.override("POST", "/internal/v1/orders/search", request -> DownstreamStub.Response.json(200, FakeBackends.write(Map.of(
+        STUB.override("POST", "/api/v1/internal/orders/search", request -> DownstreamStub.Response.json(200, FakeBackends.write(Map.of(
                 "items", List.of(FakeBackends.orderJson(servedAndPaid)), "page", 0, "size", 20, "totalElements", 1))));
         listOrders("?view=AWAITING_DELIVERY").andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("DEPENDENCY_BAD_RESPONSE"));
@@ -261,7 +261,7 @@ class WaiterOrderApiTests extends ApiTestBase {
     @Test
     void requestToOrderCarriesOnlyTheVerifiedRestaurantAndTheAllowListedFilters() throws Exception {
         listOrders("?view=READY_HISTORY&size=5&page=0").andExpect(status().isOk());
-        DownstreamStub.Request search = STUB.requests("POST", "/internal/v1/orders/search").getFirst();
+        DownstreamStub.Request search = STUB.requests("POST", "/api/v1/internal/orders/search").getFirst();
         var body = FakeBackends.read(search.body());
         assertEquals(RESTAURANT.toString(), body.get("restaurantId").asString());
         assertEquals("READY_HISTORY", body.get("view").asString());

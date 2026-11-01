@@ -118,18 +118,18 @@ public final class FakeBackends {
     /** Known guest credentials by token; an unknown token is answered with 404. */
     public final Map<String, Guest> guests = new ConcurrentHashMap<>();
 
-    private static final Pattern TABLE_ID = Pattern.compile("/internal/v1/tables/([0-9a-f-]{36})");
-    private static final Pattern ORDER_ID = Pattern.compile("/internal/v1/orders/([0-9a-f-]{36})");
+    private static final Pattern TABLE_ID = Pattern.compile("/api/v1/internal/tables/([0-9a-f-]{36})");
+    private static final Pattern ORDER_ID = Pattern.compile("/api/v1/internal/orders/([0-9a-f-]{36})");
 
     public FakeBackends installOn(DownstreamStub stub) {
-        stub.route("GET", "/internal/v1/tables", this::listTables);
+        stub.route("GET", "/api/v1/internal/tables", this::listTables);
         stub.route("GET", TABLE_ID.pattern(), this::getTable);
-        stub.route("POST", "/internal/v1/orders/session-summaries", this::sessionSummaries);
-        stub.route("POST", "/internal/v1/orders/search", this::searchOrders);
+        stub.route("POST", "/api/v1/internal/orders/session-summaries", this::sessionSummaries);
+        stub.route("POST", "/api/v1/internal/orders/search", this::searchOrders);
         stub.route("GET", ORDER_ID.pattern(), this::getOrder);
-        stub.route("POST", "/internal/v1/guest-sessions/verify", this::verifyGuest);
-        stub.route("POST", "/internal/v1/orders/[0-9a-f-]{36}/serve", this::serveOrder);
-        stub.route("GET", "/internal/v1/orders/[0-9a-f-]{36}/serve-commands/[0-9a-f-]{36}", this::serveStatus);
+        stub.route("POST", "/api/v1/internal/guest-sessions/verify", this::verifyGuest);
+        stub.route("POST", "/api/v1/internal/orders/[0-9a-f-]{36}/serve", this::serveOrder);
+        stub.route("GET", "/api/v1/internal/orders/[0-9a-f-]{36}/serve-commands/[0-9a-f-]{36}", this::serveStatus);
         return this;
     }
 
@@ -220,9 +220,9 @@ public final class FakeBackends {
         return orders.stream().filter(o -> o.id().equals(orderId)).findFirst().orElseThrow();
     }
 
-    private static final Pattern SERVE_PATH = Pattern.compile("/internal/v1/orders/([0-9a-f-]{36})/serve");
+    private static final Pattern SERVE_PATH = Pattern.compile("/api/v1/internal/orders/([0-9a-f-]{36})/serve");
     private static final Pattern SERVE_STATUS_PATH =
-            Pattern.compile("/internal/v1/orders/([0-9a-f-]{36})/serve-commands/([0-9a-f-]{36})");
+            Pattern.compile("/api/v1/internal/orders/([0-9a-f-]{36})/serve-commands/([0-9a-f-]{36})");
 
     /**
      * Decides atomically (the whole method is one critical section, as Order's database transaction must be):

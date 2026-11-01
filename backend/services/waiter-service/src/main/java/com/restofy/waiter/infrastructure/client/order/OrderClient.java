@@ -49,7 +49,7 @@ public class OrderClient {
         }
         Set<UUID> requested = new HashSet<>(tableSessionIds);
         SessionSummariesDto result = DownstreamCalls.execute(DEPENDENCY, () -> client.post()
-                .uri("/internal/v1/orders/session-summaries")
+                .uri("/api/v1/internal/orders/session-summaries")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(new SessionSummaryRequest(restaurantId, List.copyOf(requested)))
                 .retrieve().body(SessionSummariesDto.class));
@@ -74,7 +74,7 @@ public class OrderClient {
         }
         List<UUID> sessions = tableSessionIds == null ? null : List.copyOf(new HashSet<>(tableSessionIds));
         OrderPageDto result = DownstreamCalls.execute(DEPENDENCY, () -> client.post()
-                .uri("/internal/v1/orders/search")
+                .uri("/api/v1/internal/orders/search")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(new OrderSearchRequest(restaurantId, tableId, sessions, view, page, size))
                 .retrieve().body(OrderPageDto.class));
@@ -99,7 +99,7 @@ public class OrderClient {
 
     public Optional<OrderDto> findOrder(UUID restaurantId, UUID orderId) {
         Optional<OrderDto> order = DownstreamCalls.executeOptional(DEPENDENCY, () -> client.get()
-                .uri(uri -> uri.path("/internal/v1/orders/{orderId}")
+                .uri(uri -> uri.path("/api/v1/internal/orders/{orderId}")
                         .queryParam("restaurantId", restaurantId).build(orderId))
                 .retrieve().body(OrderDto.class));
         order.ifPresent(found -> {
@@ -123,7 +123,7 @@ public class OrderClient {
     public ServeResponseDto serve(UUID orderId, ServeCommandRequestDto command) {
         try {
             ServeResponseDto answer = client.post()
-                    .uri("/internal/v1/orders/{orderId}/serve", orderId)
+                    .uri("/api/v1/internal/orders/{orderId}/serve", orderId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("Idempotency-Key", command.commandId().toString())
                     .body(command)
@@ -147,7 +147,7 @@ public class OrderClient {
     /** What Order recorded for a command id; empty if Order has no record of it (not received, or still in flight). */
     public Optional<ServeStatusDto> serveStatus(UUID restaurantId, UUID orderId, UUID commandId) {
         Optional<ServeStatusDto> status = DownstreamCalls.executeOptional(DEPENDENCY, () -> client.get()
-                .uri(uri -> uri.path("/internal/v1/orders/{orderId}/serve-commands/{commandId}")
+                .uri(uri -> uri.path("/api/v1/internal/orders/{orderId}/serve-commands/{commandId}")
                         .queryParam("restaurantId", restaurantId).build(orderId, commandId))
                 .retrieve().body(ServeStatusDto.class));
         status.ifPresent(found -> {

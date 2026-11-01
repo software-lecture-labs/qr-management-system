@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Real PostgreSQL (Testcontainers): Flyway applies V101-V106, Hibernate validates the entity against them, and
+ * Real PostgreSQL (Testcontainers): Flyway applies V101-V105, Hibernate validates the entity against them, and
  * the database itself enforces the call constraints, the single active call per guest and type, the tenant
  * foreign keys of the audit tables and the delivery queue states.
  */
@@ -126,10 +126,10 @@ class ServiceRequestPersistenceTests {
     }
 
     @Test
-    void flywayAppliedV101ToV106AndHibernateValidatesTheSchema() {
+    void flywayAppliedV101ToV105AndHibernateValidatesTheSchema() {
         List<String> versions = jdbc.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class);
-        assertEquals(List.of("101", "102", "103", "104", "105", "106"), versions,
+        assertEquals(List.of("101", "102", "103", "104", "105"), versions,
                 "Waiter migrations must stay inside the V101-V110 range, in order and without gaps");
         assertEquals("validate", entityManagerFactory.getProperties().get("hibernate.hbm2ddl.auto"));
     }
