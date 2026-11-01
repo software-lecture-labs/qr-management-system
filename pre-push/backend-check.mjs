@@ -1,4 +1,11 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { repositoryRoot, execute, backendTests, backendResults, readModules, clearBackendReports } from '../lib/quality-tools.mjs';
+
+export function resolveMavenCommand(root, platform = process.platform) {
+	const wrapper = path.join(root, 'backend', 'services', 'admin-service', platform === 'win32' ? 'mvnw.cmd' : 'mvnw');
+	return fs.existsSync(wrapper) ? wrapper : platform === 'win32' ? 'mvn.cmd' : 'mvn';
+}
 
 export async function requireMaven25(run, mvn, root) {
   const version = await run(mvn, ['-version'], root, true);
@@ -18,7 +25,7 @@ export async function runBackendChecks({ root = repositoryRoot, service = 'all',
     log('[SCOPE] ' + (service === 'all' ? 'Tüm backend servisleri' : service));
     const env = Object.fromEntries(Object.entries(ambient).filter(([name]) => !name.startsWith('SONAR')));
     const run = (command, args, cwd = root, capture = false) => runCommand(command, args, { cwd, env, capture, log });
-    const mvn = process.platform === 'win32' ? 'mvn.cmd' : 'mvn';
+		const mvn = resolveMavenCommand(root);
     await requireMaven25(run, mvn, root);
     clearBackendReports(root, selected);
     const args = ['-B', '-ntp', '-f', 'backend/pom.xml', '--fail-at-end'];

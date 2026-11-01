@@ -90,10 +90,11 @@ async function backendFixture(options, action) {
   await scratch(async (root, write) => {
     write('frontend/coverage/keep.txt','frontend report');
     write('backend/services/mail-service/target/surefire-reports/keep.txt','other service report');
+    write(`backend/services/admin-service/${process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw'}`, 'wrapper');
     const lines = [], calls = [];
     const runCommand = async (command,args,settings) => {
       calls.push({command,args,env:settings.env});
-      assert.match(command,/^mvn(\.cmd)?$/);
+      assert.equal(command, path.join(root, 'backend', 'services', 'admin-service', process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw'));
       assert.equal(settings.env.SONAR_TOKEN,undefined);
       if (args.includes('-version')) return {code:options.missingMaven?1:0,output:'Java version: 25.0.4'};
       const selected = args.includes('-pl') ? [args[args.indexOf('-pl')+1]] : modules;

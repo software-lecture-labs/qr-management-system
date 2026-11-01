@@ -2,7 +2,7 @@
 
 Bu manuel script testleri, coverage ve build sonuçlarını kontrol eder; Git hook oluşturmaz, commit veya push yapmaz. SonarQube bu scriptin parçası değildir. Daha önce seçilen kök `pre-push/` ve `sonarqube/` yerleşimi korunur; script'ler `ops/` altına taşınmaz.
 
-Java 25 kullanan Maven, Node.js 22.12+ (veya 24/26+) ve kurulu frontend paketleri gerekir.
+JDK 25, Node.js 22.12+ (veya 24+) ve kurulu frontend paketleri gerekir. Backend kontrolleri repository'deki Maven Wrapper'ı kullanır; ayrıca global Maven kurulumu gerekmez.
 
 Tam kontrolden önce frontend dizininde bir kez `npm run test:e2e:install` ile
 Chromium'u kurun. Seçilen profilin backend servisleri çalışıyor olmalıdır:

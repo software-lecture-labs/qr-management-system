@@ -27,6 +27,7 @@ async function fixture(options = {}) {
   write('.env', 'SONAR_HOST_URL=http://localhost:5099\nSONAR_TOKEN=fixture-token-no-account\n');
   write('.env.dev', options.tokenMissing ? 'SONAR_TOKEN=\n' : '');
   write('backend/pom.xml', modules.map((name) => `<module>services/${name}</module>`).join('\n'));
+  write(`backend/services/admin-service/${process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw'}`, 'wrapper');
   write('frontend/node_modules/vitest/package.json', '{}');
   write('frontend/node_modules/@sonar/scan/package.json', '{}');
   const runCommand = async (command, args, settings) => {
@@ -108,6 +109,9 @@ test('scan passes only after fresh reports, processing, both gates and overall t
   assert.ok(result.requests.filter(endpoint => endpoint.startsWith('/api/ce/task')).length === 2);
   assert.ok(result.calls.every(call => !call.args.some(arg => arg.includes('fixture-token-no-account'))));
   assert.ok(result.calls.every(call => !call.args.includes('up') && !call.args.includes('stop')));
+  const mavenCalls = result.calls.filter(call => call.args.includes('-version') || call.args.includes('verify') || call.args.includes('sonar:sonar'));
+  assert.equal(mavenCalls.length, 3);
+  assert.ok(mavenCalls.every(call => path.basename(call.command) === (process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw')));
 });
 
 test('a passing custom assigned gate is accepted and its actual conditions are reported', async () => {

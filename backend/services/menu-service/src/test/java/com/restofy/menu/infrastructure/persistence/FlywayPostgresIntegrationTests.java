@@ -1,12 +1,15 @@
 package com.restofy.menu.infrastructure.persistence;
 
 import com.restofy.testsupport.flyway.ValidationProbe;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import jakarta.persistence.EntityManagerFactory;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;
 import org.flywaydb.core.api.exception.FlywayValidateException;
 import org.hibernate.tool.schema.spi.SchemaManagementException;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,16 +23,21 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.support.ResourcePropertySource;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DelegatingDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import javax.sql.DataSource;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,6 +50,7 @@ class FlywayPostgresIntegrationTests {
     @TempDir
     Path migrations;
     private String database;
+    private final Map<String, HikariDataSource> dataSources = new HashMap<>();
 
     @BeforeAll
     static void startIsolatedPostgres() {
@@ -64,9 +73,33 @@ class FlywayPostgresIntegrationTests {
         database = newDatabase();
     }
 
+    @AfterEach
+    void closeTestConnections() {
+        dataSources.values().forEach(HikariDataSource::close);
+        dataSources.clear();
+    }
+
+    private HikariDataSource dataSource(String name) {
+        return dataSources.computeIfAbsent(name, key -> {
+            var config = new HikariConfig();
+            config.setJdbcUrl(key.equals(POSTGRES.getDatabaseName()) ? POSTGRES.getJdbcUrl() : url(key));
+            config.setUsername(POSTGRES.getUsername());
+            config.setPassword(POSTGRES.getPassword());
+            // Flyway can hold its metadata connection while acquiring a migration connection.
+            config.setMaximumPoolSize(2);
+            config.setMinimumIdle(0);
+            // Retry only connection acquisition, within a bounded deadline; never retry SQL or migrations.
+            config.setInitializationFailTimeout(-1);
+            config.setConnectionTimeout(30_000);
+            config.addDataSourceProperty("loginTimeout", "5");
+            config.addDataSourceProperty("connectTimeout", "5");
+            return new HikariDataSource(config);
+        });
+    }
+
     private String newDatabase() throws Exception {
         String name = "flyway_case_" + UUID.randomUUID().toString().replace("-", "");
-        try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+        try (var connection = dataSource(POSTGRES.getDatabaseName()).getConnection();
              var statement = connection.createStatement()) {
             statement.execute("CREATE DATABASE " + name);
         }
@@ -79,7 +112,7 @@ class FlywayPostgresIntegrationTests {
     }
 
     private Connection connection(String name) throws Exception {
-        return DriverManager.getConnection(url(name), POSTGRES.getUsername(), POSTGRES.getPassword());
+        return dataSource(name).getConnection();
     }
 
     private String scalar(String name, String sql) throws Exception {
@@ -124,7 +157,7 @@ class FlywayPostgresIntegrationTests {
     }
 
     private Flyway flyway(String name) {
-        return Flyway.configure().dataSource(url(name), POSTGRES.getUsername(), POSTGRES.getPassword())
+        return Flyway.configure().dataSource(dataSource(name))
                 .locations(location()).load();
     }
 
@@ -133,6 +166,9 @@ class FlywayPostgresIntegrationTests {
                 ? AutoConfigurations.of(DataSourceAutoConfiguration.class, FlywayAutoConfiguration.class, HibernateJpaAutoConfiguration.class)
                 : AutoConfigurations.of(DataSourceAutoConfiguration.class, FlywayAutoConfiguration.class);
         var runner = new ApplicationContextRunner().withConfiguration(configurations)
+                // Spring and direct Flyway calls use the same bounded test pool. The wrapper prevents
+                // context shutdown from closing it before post-startup/rollback assertions run.
+                .withBean(DataSource.class, () -> new DelegatingDataSource(dataSource(database)))
                 .withInitializer(context -> {
                     var sources = context.getEnvironment().getPropertySources();
                     sources.remove(StandardEnvironment.SYSTEM_PROPERTIES_PROPERTY_SOURCE_NAME);
@@ -163,6 +199,13 @@ class FlywayPostgresIntegrationTests {
         return false;
     }
 
+    private static boolean hasSqlState(Throwable error, String sqlState) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current instanceof SQLException sql && sqlState.equals(sql.getSQLState())) return true;
+        }
+        return false;
+    }
+
     @Test
     void bootStartupMigratesAndRecordsHistoryInPublicWithSafeDefaults() throws Exception {
         firstMigration();
@@ -175,11 +218,13 @@ class FlywayPostgresIntegrationTests {
             assertTrue(config.isValidateOnMigrate());
             assertTrue(config.isExecuteInTransaction());
             assertEquals("validate", context.getEnvironment().getProperty("spring.jpa.hibernate.ddl-auto"));
-            assertEquals("1", scalar(database, "SELECT count(*) FROM public.migration_probe"));
-            assertEquals(List.of("1"), versions(database));
-            assertEquals("1", scalar(database, "SELECT count(*) FROM public.flyway_schema_history WHERE success AND checksum IS NOT NULL AND type='SQL'"));
-            assertEquals("public", scalar(database, "SELECT current_schema()"));
-            assertEquals("0", scalar(database, "SELECT count(*) FROM pg_namespace WHERE nspname NOT IN ('public','information_schema') AND nspname NOT LIKE 'pg_%'"));
+            // Reuse the context's migrated datasource instead of opening a new TCP/SSL handshake per assertion.
+            var jdbc = new JdbcTemplate(context.getBean(DataSource.class));
+            assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM public.migration_probe", Long.class));
+            assertEquals(List.of("1"), jdbc.queryForList("SELECT version FROM public.flyway_schema_history ORDER BY installed_rank", String.class));
+            assertEquals(1L, jdbc.queryForObject("SELECT count(*) FROM public.flyway_schema_history WHERE success AND checksum IS NOT NULL AND type='SQL'", Long.class));
+            assertEquals("public", jdbc.queryForObject("SELECT current_schema()", String.class));
+            assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM pg_namespace WHERE nspname NOT IN ('public','information_schema') AND nspname NOT LIKE 'pg_%'", Long.class));
         });
     }
 
@@ -248,6 +293,8 @@ class FlywayPostgresIntegrationTests {
         boot(false, false).run(context -> {
             assertNotNull(context.getStartupFailure());
             assertTrue(hasCause(context.getStartupFailure(), FlywayException.class));
+            assertTrue(hasSqlState(context.getStartupFailure(), "42601"),
+                    () -> "Expected PostgreSQL syntax error, not a connection/startup failure: " + context.getStartupFailure());
         });
         assertNull(scalar(database, "SELECT to_regclass('public.failed_probe')"));
         assertEquals(List.of(), versions(database));

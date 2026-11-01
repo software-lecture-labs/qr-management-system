@@ -2,10 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { repositoryRoot, execute, generatedPath, freshFile, backendTests, backendResults, readModules, clearReports, withReportLock, withRunLog } from '../lib/quality-tools.mjs';
-import { requireMaven25 } from './backend-check.mjs';
+import { requireMaven25, resolveMavenCommand } from './backend-check.mjs';
 import { checkGitSecrets, checkBackendHealth, playwrightResults } from './runtime-checks.mjs';
 
 export const requiredRows = ['Git / Secret Check', 'Backend Tests', 'Backend Build', 'Backend Coverage', 'Frontend ESLint', 'Frontend TypeScript', 'Frontend Tests', 'Frontend Coverage', 'Frontend Build', 'Frontend HTTP Health', 'Frontend Playwright', 'NPM Production Audit', 'Docker Configuration', 'Backend HTTP Health'];
+
+export function isSupportedNodeVersion(version = process.versions.node) {
+  const [major, minor] = String(version).split('.').map(Number);
+  return (major === 22 && minor >= 12) || major >= 24;
+}
 
 export function formatQualityStatus(value, stream = process.stdout) {
   const text = String(value);
@@ -21,7 +26,7 @@ export async function runQualityChecks({ root = repositoryRoot, profile = 'dev',
   const say = log;
   const run = (command, args, cwd = root, capture = false) => runCommand(command, args, { cwd, env, capture, log: say });
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const mvn = process.platform === 'win32' ? 'mvn.cmd' : 'mvn';
+  const mvn = resolveMavenCommand(root);
   const front = path.join(root, 'frontend');
   const started = Date.now();
   async function step(name, action) {
@@ -33,8 +38,7 @@ export async function runQualityChecks({ root = repositoryRoot, profile = 'dev',
     if (!['dev', 'prod'].includes(profile)) throw new Error('Usage: pre-push.cmd [dev|prod]');
     env = Object.fromEntries(Object.entries(ambient).filter(([name]) => !name.startsWith('SONAR')));
     const modules = readModules(root);
-    const [major, minor] = process.versions.node.split('.').map(Number);
-    if (!((major === 22 && minor >= 12) || major === 24 || major >= 26)) throw new Error('Node.js 22.12+, 24 or 26+ is required');
+    if (!isSupportedNodeVersion()) throw new Error('Node.js 22.12+ or 24+ is required');
     clearReports(root, modules);
 
     await step('Git / Secret Check', () => checkGitSecrets(run, say));

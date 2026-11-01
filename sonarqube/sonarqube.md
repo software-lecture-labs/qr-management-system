@@ -1,6 +1,6 @@
 # RESTOFY SonarQube
 
-Docker Engine/Desktop, Node.js, Java 25 kullanan Maven ve kurulu frontend paketleri gerekir. Mevcut root `.env` Sonar veritabanı ayarlarını içerir; gerçek ENV dosyaları Git'e gönderilmez. Kök `sonarqube/` yerleşimi ve ayrı `docker-compose.sonar.yml` korunur; pre-push bu sistemi çağırmaz.
+Docker Engine/Desktop, Node.js, JDK 25 ve kurulu frontend paketleri gerekir. Maven için repository'deki Maven Wrapper kullanılır; ayrıca global Maven kurulumu gerekmez. Mevcut root `.env` Sonar veritabanı ayarlarını içerir; gerçek ENV dosyaları Git'e gönderilmez. Kök `sonarqube/` yerleşimi ve ayrı `docker-compose.sonar.yml` korunur; pre-push bu sistemi çağırmaz.
 
 Windows:
 
