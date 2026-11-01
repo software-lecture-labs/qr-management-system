@@ -148,6 +148,18 @@ class ApiGatewayRoutingTests {
         if (mediaType.getCharset() != null) assertEquals(StandardCharsets.UTF_8, mediaType.getCharset());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"/api/v1/carts", "/api/v1/carts/current", "/api/v1/carts/current/items/123"})
+    void forwardsGuestCartPathsToTheOrderServiceKeepingThePrefix(String path) throws Exception {
+        String id = UUID.randomUUID().toString();
+        var response = send(gatewayRequest(path, id).header("Authorization", "Bearer fixture-not-a-real-token")
+                .GET().build());
+        assertResponse(response, "order-service", 200);
+        var received = onlyRequest(id, "order-service");
+        assertEquals(path, received.path());
+        assertEquals("Bearer fixture-not-a-real-token", received.header("Authorization"));
+    }
+
     @Test
     void preservesQueryParametersIncludingRepeatedAndEncodedValues() throws Exception {
         String id = UUID.randomUUID().toString();
@@ -183,7 +195,7 @@ class ApiGatewayRoutingTests {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"/api/v1/unknown", "/api/v1/authentication", "/api/v1/orders-extra", "/api/v1/menu-item", "/api/v1/ratings-extra"})
+    @ValueSource(strings = {"/api/v1/unknown", "/api/v1/authentication", "/api/v1/orders-extra", "/api/v1/carts-extra", "/api/v1/menu-item", "/api/v1/ratings-extra"})
     void unknownAndSimilarPrefixesReturn404WithoutContactingAnyDownstream(String path) throws Exception {
         String id = UUID.randomUUID().toString();
         var response = send(gatewayRequest(path, id).GET().build());

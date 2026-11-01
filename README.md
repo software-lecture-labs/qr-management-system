@@ -194,6 +194,8 @@ sh ./ops/env.sh status     # Aktif profili göster
 
 PROD için önce `.env.prod` dosyasını `.env.example` üzerinden oluşturun (`APP_ENV=prod`, `SPRING_PROFILES_ACTIVE=prod`, `COMPOSE_PROJECT_NAME=restofy-prod`, `SWAGGER_ENABLED=false`, gerçek URL/CORS değerleri ve production kimlik bilgileri gerekir), ardından `use prod` çalıştırın. PROD ayrıntıları için [`ops/ops.md`](ops/ops.md) dosyasına bakın. `.env.example` dosyasını doğrudan production secret dosyası olarak kullanmayın.
 
+> **DEV profili kimlik doğrulama yapmaz.** `SPRING_PROFILES_ACTIVE=dev` iken Order Service sabit yer tutucu misafir, personel (ADMIN dahil) ve servis kimliklerini kabul eder; bunlar API Gateway üzerinden gelen isteklerde de geçerlidir. Bu profil yalnızca kendi bilgisayarınızda kullanılmalıdır; paylaşılan, erişilebilir bir sunucuda veya production'da **asla** çalıştırmayın. Servis dev profiliyle başladığında günlüğe belirgin bir uyarı bloğu yazar. `dev` ve `test` dışındaki profillerde bu doğrulayıcılar kapalıdır (fail-closed, 503).
+
 Daha önce başka yöntemle oluşturulmuş bir `.env` varsa ve betik "`.env` differs" hatası verirse, mevcut dosya `.env.bak` olarak yedeklenerek geçiş yapılabilir:
 
 ```powershell

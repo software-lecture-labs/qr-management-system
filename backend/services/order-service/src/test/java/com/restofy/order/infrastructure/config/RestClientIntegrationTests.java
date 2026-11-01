@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
 import org.springframework.core.io.support.ResourcePropertySource;
@@ -101,7 +102,7 @@ class RestClientIntegrationTests {
                 if (delayResponse) {
                     try {
                         if (!releaseResponse.await(10,TimeUnit.SECONDS)) throw new IllegalStateException("Test response was not released");
-                    } catch (InterruptedException interrupted) {
+                    } catch (InterruptedException _) {
                         Thread.currentThread().interrupt();
                         return;
                     }
@@ -149,7 +150,7 @@ class RestClientIntegrationTests {
                 });
     }
 
-    private RestClient client(org.springframework.context.ApplicationContext context) {
+    private RestClient client(ApplicationContext context) {
         return context.getBean(RestClient.Builder.class).clone()
                 .baseUrl(context.getEnvironment().getRequiredProperty("MENU_SERVICE_URL")).build();
     }
@@ -231,7 +232,8 @@ class RestClientIntegrationTests {
         peer.stop(0);
         peerStopped = true;
         runner(environment()).run(context -> {
-            var error = assertThrows(ResourceAccessException.class,() -> client(context).get().uri("/technical/check").retrieve().body(Reply.class));
+            var response = client(context).get().uri("/technical/check").retrieve();
+            var error = assertThrows(ResourceAccessException.class, () -> response.body(Reply.class));
             assertTrue(hasCause(error,ConnectException.class));
             assertTrue(received.isEmpty());
         });
@@ -286,7 +288,7 @@ class RestClientIntegrationTests {
             var accepted = new CountDownLatch(1);
             var release = new CountDownLatch(1);
             workers.submit(() -> {
-                try (var socket = listener.accept()) {
+                try (var _ = listener.accept()) {
                     accepted.countDown();
                     if (!release.await(10,TimeUnit.SECONDS)) throw new IllegalStateException("TLS test peer was not released");
                 }
@@ -304,7 +306,8 @@ class RestClientIntegrationTests {
                         assertTrue(accepted.await(5,TimeUnit.SECONDS));
                         var failure = assertThrows(ExecutionException.class,() -> pending.get(8,TimeUnit.SECONDS));
                         assertInstanceOf(ResourceAccessException.class,failure.getCause());
-                        assertTrue(hasCause(failure,HttpConnectTimeoutException.class),"Connect phase must time out, not the read phase: "+failure.getCause());
+                        assertTrue(hasCause(failure,HttpConnectTimeoutException.class),
+                                "Connect phase must time out, not the read phase: "+failure.getCause());
                     } finally {
                         release.countDown();
                     }
@@ -319,7 +322,8 @@ class RestClientIntegrationTests {
     void malformedJsonResponseIsNotSilentlyAccepted() {
         responseBody = "{not valid JSON";
         runner(environment()).run(context -> {
-            var error = assertThrows(RestClientException.class,() -> client(context).get().uri("/technical/bad-json").retrieve().body(Reply.class));
+            var response = client(context).get().uri("/technical/bad-json").retrieve();
+            var error = assertThrows(RestClientException.class, () -> response.body(Reply.class));
             assertTrue(hasCause(error,HttpMessageNotReadableException.class));
             onlyRequest();
         });
@@ -330,7 +334,8 @@ class RestClientIntegrationTests {
         contentType = "text/plain";
         responseBody = "not a response DTO";
         runner(environment()).run(context -> {
-            assertThrows(UnknownContentTypeException.class,() -> client(context).get().uri("/technical/wrong-type").retrieve().body(Reply.class));
+            var response = client(context).get().uri("/technical/wrong-type").retrieve();
+            assertThrows(UnknownContentTypeException.class, () -> response.body(Reply.class));
             onlyRequest();
         });
     }
